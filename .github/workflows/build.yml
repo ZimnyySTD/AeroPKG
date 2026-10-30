@@ -15,16 +15,44 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld unzip
+
       - name: Setup OpenOrbis PS4 Toolchain
         run: |
           sudo mkdir -p /opt/openorbis
           echo "Downloading OpenOrbis PS4 Toolchain (LLVM-18)..."
-          curl -sL "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz" | sudo tar -xz -C /opt/openorbis
+          curl --fail --location --retry 3 \
+            "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz" \
+            | sudo tar -xz -C /opt/openorbis
           
           TOOLCHAIN_ROOT="/opt/openorbis/OpenOrbis/PS4Toolchain"
           echo "OO_PS4_TOOLCHAIN=$TOOLCHAIN_ROOT" >> $GITHUB_ENV
           echo "OO_TOOLCHAIN=$TOOLCHAIN_ROOT" >> $GITHUB_ENV
           echo "$TOOLCHAIN_ROOT/bin/linux" >> $GITHUB_PATH
+
+      - name: Download SQLite amalgamation
+        run: |
+          mkdir -p third_party/sqlite
+          curl --fail --location --retry 3 \
+            "https://www.sqlite.org/2024/sqlite-amalgamation-3450300.zip" \
+            -o /tmp/sqlite.zip
+          unzip -q /tmp/sqlite.zip -d /tmp
+          cp /tmp/sqlite-amalgamation-3450300/sqlite3.c third_party/sqlite/
+          cp /tmp/sqlite-amalgamation-3450300/sqlite3.h third_party/sqlite/
+
+      - name: Download SDL_ttf source
+        run: |
+          curl --fail --location --retry 3 \
+            "https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.0.15/SDL2_ttf-2.0.15.tar.gz" \
+            -o /tmp/SDL2_ttf.tar.gz
+          tar -xzf /tmp/SDL2_ttf.tar.gz -C /tmp
+          mkdir -p third_party/SDL_ttf
+          cp /tmp/SDL2_ttf-2.0.15/SDL_ttf.c third_party/SDL_ttf/
+          sed -i 's/int TTF_GlyphIsProvided(const TTF_Font \*font/int TTF_GlyphIsProvided(TTF_Font *font/' \
+            third_party/SDL_ttf/SDL_ttf.c
 
       - name: Compile and Package AeroPKG
         run: |

@@ -5,22 +5,31 @@ TITLE_ID    := APKG00001
 CONTENT_ID  := IV0000-APKG00001_00-AEROPKG000000000
 
 # Libraries linked into the ELF.
-LIBS        := -lc -lkernel -lc++ -lSceUserService -lSceVideoOut -lSceAudioOut -lScePad -lSceSysmodule -lSceNet -lSceNetCtl -lSceHttp -lSceSsl -lSceFreeType -lSDL2 -lSDL2_image
+LIBS        := -lc -lkernel -lc++ -lc++abi -lpthread -lSceUserService -lSceVideoOut -lSceAudioOut -lScePad -lSceSysmodule -lSceNet -lSceNetCtl -lSceHttp -lSceSsl -lSceFreeType -lSDL2 -lSDL2_image
 
 # Root vars
 TOOLCHAIN   := $(OO_PS4_TOOLCHAIN)
 PROJDIR     := src
 INTDIR      := build
+SQLITE_DIR  := third_party/sqlite
+SQLITE_SRC  := $(SQLITE_DIR)/sqlite3.c
+SDL_TTF_DIR := third_party/SDL_ttf
+SDL_TTF_SRC := $(SDL_TTF_DIR)/SDL_ttf.c
 
 # Define objects to build
 CFILES      := $(wildcard $(PROJDIR)/*.c)
 CPPFILES    := $(wildcard $(PROJDIR)/*.cpp)
-OBJS        := $(patsubst $(PROJDIR)/%.c, $(INTDIR)/%.o, $(CFILES)) $(patsubst $(PROJDIR)/%.cpp, $(INTDIR)/%.o, $(CPPFILES))
+C_OBJS      := $(patsubst $(PROJDIR)/%.c, $(INTDIR)/%.o, $(CFILES))
+CPP_OBJS    := $(patsubst $(PROJDIR)/%.cpp, $(INTDIR)/%.o, $(CPPFILES))
+OBJS        := $(C_OBJS) $(CPP_OBJS) $(INTDIR)/sqlite3.o $(INTDIR)/SDL_ttf.o
 
 # Define final C/C++ flags
-CFLAGS      := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -c -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include -Iinclude
-CXXFLAGS    := $(CFLAGS) -isystem $(TOOLCHAIN)/include/c++/v1 -std=c++17
-LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
+TARGET_FLAGS := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
+CFLAGS      := $(TARGET_FLAGS) -c -Iinclude -I$(SQLITE_DIR)
+CXXFLAGS    := $(TARGET_FLAGS) -c -Iinclude -I$(SQLITE_DIR) -isystem $(TOOLCHAIN)/include/c++/v1 -std=c++17
+SQLITEFLAGS := $(TARGET_FLAGS) -c -I$(SQLITE_DIR) -DSQLITE_THREADSAFE=0 -DSQLITE_DEFAULT_MEMSTATUS=0
+SDL_TTFFLAGS := $(TARGET_FLAGS) -c -I$(SDL_TTF_DIR) -I$(TOOLCHAIN)/include/SDL2
+LDFLAGS     := --target=x86_64-pc-freebsd12-elf -fuse-ld=lld -nostdlib -pie --sysroot=$(TOOLCHAIN) -Wl,--script=$(TOOLCHAIN)/link.x -Wl,--eh-frame-hdr -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
 
 CC          := clang
 CCX         := clang++
@@ -51,7 +60,7 @@ sce_sys/param.sfo:
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ VERSION --type Utf8 --maxsize 8 --value '$(VERSION)'
 
 eboot.bin: $(OBJS)
-	$(LD) $(INTDIR)/*.o -o $(INTDIR)/AeroPKG.elf $(LDFLAGS)
+	$(CCX) $(OBJS) -o $(INTDIR)/AeroPKG.elf $(LDFLAGS)
 	$(TOOLCHAIN)/bin/$(CDIR)/create-fself -in=$(INTDIR)/AeroPKG.elf -out=$(INTDIR)/AeroPKG.oelf --eboot "eboot.bin" --paid 0x3800000000000011
 
 $(INTDIR)/%.o: $(PROJDIR)/%.c
@@ -61,6 +70,14 @@ $(INTDIR)/%.o: $(PROJDIR)/%.c
 $(INTDIR)/%.o: $(PROJDIR)/%.cpp
 	mkdir -p $(INTDIR)
 	$(CCX) $(CXXFLAGS) -o $@ $<
+
+$(INTDIR)/sqlite3.o: $(SQLITE_SRC)
+	mkdir -p $(INTDIR)
+	$(CC) $(SQLITEFLAGS) -o $@ $<
+
+$(INTDIR)/SDL_ttf.o: $(SDL_TTF_SRC)
+	mkdir -p $(INTDIR)
+	$(CC) $(SDL_TTFFLAGS) -o $@ $<
 
 clean:
 	rm -rf build AeroPKG.pkg $(CONTENT_ID).pkg pkg.gp4 eboot.bin sce_sys
