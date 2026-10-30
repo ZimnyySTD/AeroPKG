@@ -209,7 +209,7 @@ int main(int argc, char* argv[]) {
                     y += 85;
                 }
             }
-        } else if (currentTab == TAB_FPKGi_CATALOG) {
+        } else if (currentTab == TAB_FPKGI_CATALOG) {
             renderer.drawText("FPKGi Catalog & Repository Browser (games.json)", 40, 110, 26, Color::White());
             const auto& items = catalog.getAllItems();
             int y = 170;

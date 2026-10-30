@@ -67,6 +67,11 @@ git clone https://github.com/your-username/AeroPKG.git
 cd AeroPKG
 
 # Build ELF and package
-make pkg
+make
 ```
+
+The Makefile expects the SQLite amalgamation at `third_party/sqlite/sqlite3.c` and
+`third_party/sqlite/sqlite3.h`. The GitHub Actions workflow downloads the pinned
+amalgamation automatically before building.
+
 This produces `AeroPKG.pkg`, which can be installed via GoldHEN Package Installer.

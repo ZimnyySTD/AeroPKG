@@ -12,6 +12,7 @@
 #include <fstream>
 #include <cstring>
 #include <ifaddrs.h>
+#include <netdb.h>
 
 WebServer::WebServer(AppEditor* editor, BgftService* bgft, AvatarManager* avatar)
     : appEditor(editor), bgftService(bgft), avatarMgr(avatar) {}
@@ -189,7 +190,7 @@ void WebServer::handleClient(int sock) {
             sendHttpResponse(sock, "text/html", ss.str());
         } else {
             // Built-in standalone responsive HTML UI
-            std::string embeddedHtml = R"(<!DOCTYPE html>
+            std::string embeddedHtml = R"HTML(<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -232,7 +233,7 @@ void WebServer::handleClient(int sock) {
     }
   </script>
 </body>
-</html>)";
+</html>)HTML";
             sendHttpResponse(sock, "text/html", embeddedHtml);
         }
         return;
