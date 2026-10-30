@@ -1,4 +1,5 @@
 # AeroPKG OpenOrbis Makefile
+OO_TOOLCHAIN ?= $(OO_PS4_TOOLCHAIN)
 CC      := clang
 CXX     := clang++
 OBJCOPY := objcopy
