@@ -50,7 +50,7 @@ jobs:
             -o /tmp/SDL2_ttf.tar.gz
           tar -xzf /tmp/SDL2_ttf.tar.gz -C /tmp
           mkdir -p third_party/SDL_ttf
-          cp /tmp/SDL2_ttf-2.20.2/src/SDL_ttf.c third_party/SDL_ttf/
+          cp /tmp/SDL2_ttf-2.20.2/SDL_ttf.c third_party/SDL_ttf/
 
       - name: Compile and Package AeroPKG
         run: |
