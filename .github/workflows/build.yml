@@ -15,6 +15,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld unzip
+
       - name: Setup OpenOrbis PS4 Toolchain
         run: |
           sudo mkdir -p /opt/openorbis
