@@ -13,19 +13,22 @@ PROJDIR     := src
 INTDIR      := build
 SQLITE_DIR  := third_party/sqlite
 SQLITE_SRC  := $(SQLITE_DIR)/sqlite3.c
+SDL_TTF_DIR := third_party/SDL_ttf
+SDL_TTF_SRC := $(SDL_TTF_DIR)/SDL_ttf.c
 
 # Define objects to build
 CFILES      := $(wildcard $(PROJDIR)/*.c)
 CPPFILES    := $(wildcard $(PROJDIR)/*.cpp)
 C_OBJS      := $(patsubst $(PROJDIR)/%.c, $(INTDIR)/%.o, $(CFILES))
 CPP_OBJS    := $(patsubst $(PROJDIR)/%.cpp, $(INTDIR)/%.o, $(CPPFILES))
-OBJS        := $(C_OBJS) $(CPP_OBJS) $(INTDIR)/sqlite3.o
+OBJS        := $(C_OBJS) $(CPP_OBJS) $(INTDIR)/sqlite3.o $(INTDIR)/SDL_ttf.o
 
 # Define final C/C++ flags
 TARGET_FLAGS := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
 CFLAGS      := $(TARGET_FLAGS) -c -Iinclude -I$(SQLITE_DIR)
 CXXFLAGS    := $(TARGET_FLAGS) -c -Iinclude -I$(SQLITE_DIR) -isystem $(TOOLCHAIN)/include/c++/v1 -std=c++17
 SQLITEFLAGS := $(TARGET_FLAGS) -c -I$(SQLITE_DIR) -DSQLITE_THREADSAFE=0 -DSQLITE_DEFAULT_MEMSTATUS=0
+SDL_TTFFLAGS := $(TARGET_FLAGS) -c -I$(SDL_TTF_DIR)
 LDFLAGS     := --target=x86_64-pc-freebsd12-elf -fuse-ld=lld -nostdlib -pie --sysroot=$(TOOLCHAIN) -Wl,--script=$(TOOLCHAIN)/link.x -Wl,--eh-frame-hdr -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
 
 CC          := clang
@@ -71,6 +74,10 @@ $(INTDIR)/%.o: $(PROJDIR)/%.cpp
 $(INTDIR)/sqlite3.o: $(SQLITE_SRC)
 	mkdir -p $(INTDIR)
 	$(CC) $(SQLITEFLAGS) -o $@ $<
+
+$(INTDIR)/SDL_ttf.o: $(SDL_TTF_SRC)
+	mkdir -p $(INTDIR)
+	$(CC) $(SDL_TTFFLAGS) -o $@ $<
 
 clean:
 	rm -rf build AeroPKG.pkg $(CONTENT_ID).pkg pkg.gp4 eboot.bin sce_sys

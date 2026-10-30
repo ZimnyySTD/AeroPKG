@@ -43,6 +43,15 @@ jobs:
           cp /tmp/sqlite-amalgamation-3450300/sqlite3.c third_party/sqlite/
           cp /tmp/sqlite-amalgamation-3450300/sqlite3.h third_party/sqlite/
 
+      - name: Download SDL_ttf source
+        run: |
+          curl --fail --location --retry 3 \
+            "https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.20.2/SDL2_ttf-2.20.2.tar.gz" \
+            -o /tmp/SDL2_ttf.tar.gz
+          tar -xzf /tmp/SDL2_ttf.tar.gz -C /tmp
+          mkdir -p third_party/SDL_ttf
+          cp /tmp/SDL2_ttf-2.20.2/src/SDL_ttf.c third_party/SDL_ttf/
+
       - name: Compile and Package AeroPKG
         run: |
           make
