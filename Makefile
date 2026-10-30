@@ -57,7 +57,7 @@ sce_sys/param.sfo:
 	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ VERSION --type Utf8 --maxsize 8 --value '$(VERSION)'
 
 eboot.bin: $(OBJS)
-	$(LD) $(INTDIR)/*.o -o $(INTDIR)/AeroPKG.elf $(LDFLAGS)
+	$(CCX) $(OBJS) -o $(INTDIR)/AeroPKG.elf $(LDFLAGS)
 	$(TOOLCHAIN)/bin/$(CDIR)/create-fself -in=$(INTDIR)/AeroPKG.elf -out=$(INTDIR)/AeroPKG.oelf --eboot "eboot.bin" --paid 0x3800000000000011
 
 $(INTDIR)/%.o: $(PROJDIR)/%.c
