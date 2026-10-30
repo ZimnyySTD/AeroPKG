@@ -1,0 +1,29 @@
+name: Build AeroPKG (PS4 PKG)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: openorbis/toolchain:latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Compile and Package AeroPKG
+        run: |
+          mkdir -p build
+          make pkg
+
+      - name: Upload AeroPKG.pkg Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AeroPKG-PS4
+          path: AeroPKG.pkg
