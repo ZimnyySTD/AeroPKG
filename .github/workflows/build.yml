@@ -51,6 +51,8 @@ jobs:
           tar -xzf /tmp/SDL2_ttf.tar.gz -C /tmp
           mkdir -p third_party/SDL_ttf
           cp /tmp/SDL2_ttf-2.0.15/SDL_ttf.c third_party/SDL_ttf/
+          sed -i 's/int TTF_GlyphIsProvided(const TTF_Font \*font/int TTF_GlyphIsProvided(TTF_Font *font/' \
+            third_party/SDL_ttf/SDL_ttf.c
 
       - name: Compile and Package AeroPKG
         run: |
