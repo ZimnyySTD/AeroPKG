@@ -1,44 +1,66 @@
 # AeroPKG OpenOrbis Makefile
-OO_TOOLCHAIN ?= $(OO_PS4_TOOLCHAIN)
-CC      := clang
-CXX     := clang++
-OBJCOPY := objcopy
-ODIR    := build
-SDIR    := src
-IDIRS   := -Iinclude -I$(OO_TOOLCHAIN)/include
+TITLE       := AeroPKG
+VERSION     := 1.00
+TITLE_ID    := APKG00001
+CONTENT_ID  := IV0000-APKG00001_00-AEROPKG000000000
 
-TITLE_ID := APKG00001
-APP_NAME := AeroPKG
+# Libraries linked into the ELF.
+LIBS        := -lc -lkernel -lc++ -lSceUserService -lSceVideoOut -lSceAudioOut -lScePad -lSceSysmodule -lSceNet -lSceNetCtl -lSceHttp -lSceSsl -lSceFreeType -lSDL2 -lSDL2_image
 
-CFLAGS   := $(IDIRS) -O3 -std=c11 -fPIE -D__PS4__
-CXXFLAGS := $(IDIRS) -O3 -std=c++17 -fPIE -D__PS4__
-LDFLAGS  := -L$(OO_TOOLCHAIN)/lib -lkernel -lSceBgftService -lSceAppInstUtil \
-            -lSceUserService -lScePad -lSceSysmodule -lSceNet -lSceNetCtl \
-            -lSceHttp -lSceSsl -lsqlite3 -lSDL2 -lSDL2_image -lSDL2_ttf -lpthread -lc
+# Root vars
+TOOLCHAIN   := $(OO_PS4_TOOLCHAIN)
+PROJDIR     := src
+INTDIR      := build
 
-CPPS := $(wildcard $(SDIR)/*.cpp)
-CS   := $(wildcard $(SDIR)/*.c)
-OBJS := $(patsubst $(SDIR)/%.cpp, $(ODIR)/%.o, $(CPPS)) $(patsubst $(SDIR)/%.c, $(ODIR)/%.o, $(CS))
+# Define objects to build
+CFILES      := $(wildcard $(PROJDIR)/*.c)
+CPPFILES    := $(wildcard $(PROJDIR)/*.cpp)
+OBJS        := $(patsubst $(PROJDIR)/%.c, $(INTDIR)/%.o, $(CFILES)) $(patsubst $(PROJDIR)/%.cpp, $(INTDIR)/%.o, $(CPPFILES))
 
-TARGET := $(ODIR)/$(APP_NAME).elf
+# Define final C/C++ flags
+CFLAGS      := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -c -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include -Iinclude
+CXXFLAGS    := $(CFLAGS) -isystem $(TOOLCHAIN)/include/c++/v1 -std=c++17
+LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
 
-all: $(TARGET) pkg
+CC          := clang
+CCX         := clang++
+LD          := ld.lld
+CDIR        := linux
 
-$(ODIR)/%.o: $(SDIR)/%.cpp
-	@mkdir -p $(ODIR)
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+all: AeroPKG.pkg
 
-$(ODIR)/%.o: $(SDIR)/%.c
-	@mkdir -p $(ODIR)
-	$(CC) $(CFLAGS) -c -o $@ $<
+AeroPKG.pkg: pkg.gp4
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core pkg_build $< .
+	@if [ -f "$(CONTENT_ID).pkg" ]; then mv $(CONTENT_ID).pkg AeroPKG.pkg; fi
 
-$(TARGET): $(OBJS)
-	$(CXX) -o $@ $^ $(LDFLAGS)
+pkg.gp4: eboot.bin sce_sys/param.sfo
+	$(TOOLCHAIN)/bin/$(CDIR)/create-gp4 -out $@ --content-id=$(CONTENT_ID) --files "$^"
 
-pkg: $(TARGET)
-	create-eboot -in=$(TARGET) -out=eboot.bin
-	create-gp4 -proj=$(APP_NAME).gp4 -titleid=$(TITLE_ID) -appname="$(APP_NAME)"
-	create-pkg -in=$(APP_NAME).gp4 -out=$(APP_NAME).pkg
+sce_sys/param.sfo:
+	mkdir -p sce_sys
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_new $@
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ APP_TYPE --type Integer --maxsize 4 --value 1
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ APP_VER --type Utf8 --maxsize 8 --value '$(VERSION)'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ ATTRIBUTE --type Integer --maxsize 4 --value 0
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ CATEGORY --type Utf8 --maxsize 4 --value 'gd'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ CONTENT_ID --type Utf8 --maxsize 48 --value '$(CONTENT_ID)'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ DOWNLOAD_DATA_SIZE --type Integer --maxsize 4 --value 0
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ SYSTEM_VER --type Integer --maxsize 4 --value 0
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ TITLE --type Utf8 --maxsize 128 --value '$(TITLE)'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ TITLE_ID --type Utf8 --maxsize 12 --value '$(TITLE_ID)'
+	$(TOOLCHAIN)/bin/$(CDIR)/PkgTool.Core sfo_setentry $@ VERSION --type Utf8 --maxsize 8 --value '$(VERSION)'
+
+eboot.bin: $(OBJS)
+	$(LD) $(INTDIR)/*.o -o $(INTDIR)/AeroPKG.elf $(LDFLAGS)
+	$(TOOLCHAIN)/bin/$(CDIR)/create-fself -in=$(INTDIR)/AeroPKG.elf -out=$(INTDIR)/AeroPKG.oelf --eboot "eboot.bin" --paid 0x3800000000000011
+
+$(INTDIR)/%.o: $(PROJDIR)/%.c
+	mkdir -p $(INTDIR)
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(INTDIR)/%.o: $(PROJDIR)/%.cpp
+	mkdir -p $(INTDIR)
+	$(CCX) $(CXXFLAGS) -o $@ $<
 
 clean:
-	rm -rf $(ODIR) eboot.bin $(APP_NAME).gp4 $(APP_NAME).pkg
+	rm -rf build AeroPKG.pkg $(CONTENT_ID).pkg pkg.gp4 eboot.bin sce_sys

@@ -15,53 +15,25 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Build Tools & System Libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            clang \
-            lld \
-            cmake \
-            curl \
-            tar \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libsdl2-ttf-dev \
-            libsqlite3-dev
-
       - name: Setup OpenOrbis PS4 Toolchain
         run: |
           sudo mkdir -p /opt/openorbis
-          echo "Downloading OpenOrbis PS4 Toolchain (LLVM 18)..."
+          echo "Downloading OpenOrbis PS4 Toolchain (LLVM-18)..."
           curl -sL "https://github.com/OpenOrbis/OpenOrbis-PS4-Toolchain/releases/download/v0.5.4/toolchain-llvm-18.tar.gz" | sudo tar -xz -C /opt/openorbis
           
-          # Locate create-eboot binary dynamically
-          EBOOT_TOOL=$(sudo find /opt/openorbis -name "create-eboot" | head -n 1)
-          if [ -z "$EBOOT_TOOL" ]; then
-            echo "Error: create-eboot not found in downloaded toolchain."
-            exit 1
-          fi
-          
-          BIN_DIR=$(dirname "$EBOOT_TOOL")
-          TOOLCHAIN_ROOT=$(dirname $(dirname "$BIN_DIR"))
-          
-          echo "Toolchain Root: $TOOLCHAIN_ROOT"
-          echo "Toolchain Bin:  $BIN_DIR"
-          
+          TOOLCHAIN_ROOT="/opt/openorbis/OpenOrbis/PS4Toolchain"
           echo "OO_PS4_TOOLCHAIN=$TOOLCHAIN_ROOT" >> $GITHUB_ENV
           echo "OO_TOOLCHAIN=$TOOLCHAIN_ROOT" >> $GITHUB_ENV
-          echo "$BIN_DIR" >> $GITHUB_PATH
+          echo "$TOOLCHAIN_ROOT/bin/linux" >> $GITHUB_PATH
 
       - name: Compile and Package AeroPKG
         run: |
-          mkdir -p build
-          make pkg
+          make
 
       - name: Upload AeroPKG.pkg Artifact
         uses: actions/upload-artifact@v4
         with:
           name: AeroPKG-PS4
           path: |
-            AeroPKG.pkg
+            *.pkg
             eboot.bin
