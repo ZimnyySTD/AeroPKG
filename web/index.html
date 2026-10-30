@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AeroPKG Web Control Center</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="sidebar">
+    <div class="logo">
+      <span class="logo-accent">Aero</span>PKG
+    </div>
+    <nav>
+      <button class="nav-btn active" onclick="switchTab('apps')">Installed Apps</button>
+      <button class="nav-btn" onclick="switchTab('sender')">Remote Package Sender</button>
+      <button class="nav-btn" onclick="switchTab('avatar')">User Avatar</button>
+      <button class="nav-btn" onclick="switchTab('system')">System Tools</button>
+    </nav>
+    <div class="status-box">
+      <div class="status-indicator"></div>
+      <span>PS4 Connected</span>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <header>
+      <h1 id="page-title">Installed Applications</h1>
+      <button class="primary-btn" onclick="restartShell()">Apply & Reload XMB</button>
+    </header>
+
+    <!-- Tab 1: Installed Apps -->
+    <section id="tab-apps" class="tab-pane active">
+      <div class="search-bar">
+        <input type="text" id="appSearch" placeholder="Search game by title or Title ID (e.g. CUSA00123)..." oninput="filterApps()">
+      </div>
+      <div id="appsList" class="apps-grid">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+
+    <!-- Tab 2: Remote Package Sender -->
+    <section id="tab-sender" class="tab-pane">
+      <div class="panel">
+        <h2>Push PKG to PS4</h2>
+        <p>Send direct HTTP package links to be downloaded and installed in the background by GoldHEN/BGFT.</p>
+        <div class="form-group">
+          <label>Package URL (HTTP / HTTPS / Local PC Server):</label>
+          <input type="text" id="pkgUrlInput" placeholder="http://192.168.1.100:8080/MyGame.pkg">
+        </div>
+        <button class="primary-btn" onclick="sendPkg()">Queue Installation</button>
+      </div>
+    </section>
+
+    <!-- Tab 3: Avatar Changer -->
+    <section id="tab-avatar" class="tab-pane">
+      <div class="panel">
+        <h2>Change PS4 User Avatar</h2>
+        <p>Select any square image from your computer to set as your primary PS4 user avatar.</p>
+        <input type="file" id="avatarFileInput" accept="image/png, image/jpeg">
+        <div id="avatarPreview" class="avatar-preview-box"></div>
+        <button class="primary-btn" onclick="uploadAvatar()">Upload & Apply Avatar</button>
+      </div>
+    </section>
+
+    <!-- Tab 4: System Tools -->
+    <section id="tab-system" class="tab-pane">
+      <div class="panel">
+        <h2>System Database & Shell Tools</h2>
+        <button class="secondary-btn" onclick="backupDb()">Backup app.db</button>
+        <button class="secondary-btn" onclick="restoreDb()">Restore app.db Backup</button>
+        <button class="danger-btn" onclick="restartShell()">Soft-Restart SceShellCore</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
