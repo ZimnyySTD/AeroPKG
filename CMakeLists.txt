@@ -77,7 +77,7 @@ add_custom_command(TARGET AeroPKG.elf POST_BUILD
     COMMAND env DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 ${OO_TOOLCHAIN}/bin/linux/PkgTool.Core sfo_setentry sce_sys/param.sfo TITLE_ID --type Utf8 --maxsize 12 --value ${APP_TITLE_ID}
     COMMAND env DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 ${OO_TOOLCHAIN}/bin/linux/PkgTool.Core sfo_setentry sce_sys/param.sfo VERSION --type Utf8 --maxsize 8 --value ${APP_VERSION}
     COMMAND ${OO_TOOLCHAIN}/bin/linux/create-fself -in=AeroPKG.elf -out=AeroPKG.oelf --eboot "eboot.bin" --paid 0x3800000000000011
-    COMMAND ${OO_TOOLCHAIN}/bin/linux/create-gp4 -out pkg.gp4 --content-id=${CONTENT_ID} --files "eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png web/index.html web/style.css web/app.js"
+    COMMAND ${OO_TOOLCHAIN}/bin/linux/create-gp4 -out pkg.gp4 --content-id=${CONTENT_ID} --files "eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png"
     COMMAND env DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 ${OO_TOOLCHAIN}/bin/linux/PkgTool.Core pkg_build pkg.gp4 .
     COMMAND cmake -E rename ${CONTENT_ID}.pkg AeroPKG.pkg
     COMMENT "Building PS4 EBOOT.BIN and AeroPKG.pkg"
