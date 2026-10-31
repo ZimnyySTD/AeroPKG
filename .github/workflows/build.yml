@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
 
     steps:
       - name: Checkout Repository
@@ -56,6 +58,7 @@ jobs:
 
       - name: Compile and Package AeroPKG
         run: |
+          make clean
           make
 
       - name: Upload AeroPKG.pkg Artifact
@@ -63,5 +66,5 @@ jobs:
         with:
           name: AeroPKG-PS4
           path: |
-            *.pkg
+            AeroPKG.pkg
             eboot.bin

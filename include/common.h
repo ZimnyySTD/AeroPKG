@@ -10,7 +10,7 @@
 
 #define APP_TITLE_ID        "APKG00001"
 #define APP_NAME            "AeroPKG"
-#define APP_VERSION         "1.00"
+#define APP_VERSION         "01.00"
 #define WEB_SERVER_PORT     8080
 
 // System paths on PS4 (GoldHEN environment)

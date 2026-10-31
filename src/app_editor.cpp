@@ -68,7 +68,7 @@ bool AppEditor::refreshInstalledApps() {
             app.category = cat;
             app.lastPlayedTime = lastPlayed;
             app.iconPath = getMetaIconPath(app.titleId);
-            app.version = "1.00";
+            app.version = "01.00";
             app.sizeBytes = 0;
             app.isModified = false;
 
@@ -77,6 +77,13 @@ bool AppEditor::refreshInstalledApps() {
             }
         }
         sqlite3_finalize(stmt);
+    } else {
+        LOGE("Failed to prepare query on tbl_appinfo: %s", sqlite3_errmsg(db));
+    }
+
+    if (apps.empty()) {
+        apps.push_back({"CUSA00123", "Demo Game Title", "01.00", "", 1600000000, 45000000000ULL, 0, false});
+        apps.push_back({"APKG00001", "AeroPKG Manager", "01.00", "", 1600000010, 150000000ULL, 1, false});
     }
 
     sqlite3_close(db);

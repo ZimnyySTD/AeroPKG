@@ -47,7 +47,7 @@ bool WebServer::start(int port) {
     serverPort = port;
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket < 0) {
-        LOGE("Failed to create web server socket");
+        LOGE("Failed to create web server socket (networking may be offline)");
         return false;
     }
 
@@ -75,8 +75,16 @@ bool WebServer::start(int port) {
     }
 
     isRunning = true;
-    serverThread = std::thread(&WebServer::runServer, this);
-    LOGI("AeroPKG Web Server active at http://%s:%d", getIpAddress().c_str(), serverPort);
+    try {
+        serverThread = std::thread(&WebServer::runServer, this);
+        LOGI("AeroPKG Web Server active at http://%s:%d", getIpAddress().c_str(), serverPort);
+    } catch (const std::exception& e) {
+        LOGE("Failed to start web server worker thread: %s", e.what());
+        close(serverSocket);
+        serverSocket = -1;
+        isRunning = false;
+        return false;
+    }
     return true;
 }
 
@@ -184,6 +192,9 @@ void WebServer::handleClient(int sock) {
     // Serve HTML Dashboard for browser visits
     if (path == "/" || path == "/index.html") {
         std::ifstream htmlFile("/app0/web/index.html");
+        if (!htmlFile.is_open()) {
+            htmlFile.open("web/index.html");
+        }
         if (htmlFile.is_open()) {
             std::stringstream ss;
             ss << htmlFile.rdbuf();
@@ -237,6 +248,33 @@ void WebServer::handleClient(int sock) {
             sendHttpResponse(sock, "text/html", embeddedHtml);
         }
         return;
+    }
+
+    // Serve Static Assets (CSS, JS)
+    if (path == "/style.css") {
+        std::ifstream cssFile("/app0/web/style.css");
+        if (!cssFile.is_open()) {
+            cssFile.open("web/style.css");
+        }
+        if (cssFile.is_open()) {
+            std::stringstream ss;
+            ss << cssFile.rdbuf();
+            sendHttpResponse(sock, "text/css", ss.str());
+            return;
+        }
+    }
+
+    if (path == "/app.js") {
+        std::ifstream jsFile("/app0/web/app.js");
+        if (!jsFile.is_open()) {
+            jsFile.open("web/app.js");
+        }
+        if (jsFile.is_open()) {
+            std::stringstream ss;
+            ss << jsFile.rdbuf();
+            sendHttpResponse(sock, "application/javascript", ss.str());
+            return;
+        }
     }
 
     sendHttpResponse(sock, "text/plain", "Not Found", 404);
