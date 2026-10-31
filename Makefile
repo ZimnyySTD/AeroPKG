@@ -31,7 +31,7 @@ TARGET_FLAGS := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -isysroot
 CFLAGS      := $(TARGET_FLAGS) -c -Iinclude -I$(SQLITE_DIR)
 CXXFLAGS    := $(TARGET_FLAGS) -c -Iinclude -I$(SQLITE_DIR) -isystem $(TOOLCHAIN)/include/c++/v1 -std=c++17
 SQLITEFLAGS := $(TARGET_FLAGS) -c -I$(SQLITE_DIR) -DSQLITE_THREADSAFE=0 -DSQLITE_DEFAULT_MEMSTATUS=0
-SDL_TTFFLAGS := $(TARGET_FLAGS) -c -I$(SDL_TTF_DIR) -I$(TOOLCHAIN)/include/SDL2
+SDL_TTFFLAGS := $(TARGET_FLAGS) -c -I$(TOOLCHAIN)/include/SDL2 -I$(TOOLCHAIN)/include/freetype
 LDFLAGS     := -m elf_x86_64 -pie --script $(TOOLCHAIN)/link.x --eh-frame-hdr -L$(TOOLCHAIN)/lib $(LIBS) $(TOOLCHAIN)/lib/crt1.o
 
 CC          := clang
