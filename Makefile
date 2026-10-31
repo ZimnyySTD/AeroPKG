@@ -7,6 +7,10 @@ CONTENT_ID  := IV0000-APKG00001_00-AEROPKG000000000
 # Libraries linked into the ELF.
 LIBS        := -lc -lkernel -lc++ -lSceUserService -lSceVideoOut -lSceAudioOut -lScePad -lSceSysmodule -lSceNet -lSceNetCtl -lSceHttp -lSceSsl -lSceFreeType -lSDL2 -lSDL2_image
 
+# Asset and module directories.
+ASSETS      := $(wildcard assets/**/*)
+LIBMODULES  := $(wildcard sce_module/*)
+
 # Root vars
 TOOLCHAIN   := $(OO_PS4_TOOLCHAIN)
 PROJDIR     := src
@@ -44,7 +48,7 @@ AeroPKG.pkg: pkg.gp4
 	$(PKGTOOL) pkg_build $< .
 	@if [ -f "$(CONTENT_ID).pkg" ]; then mv "$(CONTENT_ID).pkg" AeroPKG.pkg; fi
 
-pkg.gp4: eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png
+pkg.gp4: eboot.bin sce_sys/about/right.sprx sce_sys/param.sfo sce_sys/icon0.png $(LIBMODULES) $(ASSETS)
 	$(TOOLCHAIN)/bin/$(CDIR)/create-gp4 -out $@ --content-id=$(CONTENT_ID) --files "$^"
 
 sce_sys/param.sfo: Makefile

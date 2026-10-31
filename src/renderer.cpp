@@ -125,6 +125,7 @@ TTF_Font* Renderer::getFont(int size) {
 
     // Default system font or bundled font
     const char* fontPaths[] = {
+        "/app0/assets/fonts/font.ttf",
         "/app0/assets/font.ttf",
         "/system/common/font/DFHEIB5-MP-R-01.ttf",
         "/system/common/font/default.ttf",

@@ -8,6 +8,11 @@
 #include "cleaner.h"
 #include "web_server.h"
 
+#ifdef __ORBIS__
+#include <orbis/Sysmodule.h>
+#include <orbis/libkernel.h>
+#endif
+
 #include <iostream>
 #include <string>
 
@@ -21,6 +26,22 @@ enum ViewTab {
 };
 
 int main(int argc, char* argv[]) {
+    // Disable stdout buffering for instant logging on PS4 serial / Klog
+    setvbuf(stdout, NULL, _IONBF, 0);
+
+#ifdef __ORBIS__
+    // Load required system modules to prevent unresolved NID crashes on PS4
+    sceSysmoduleLoadModule(ORBIS_SYSMODULE_FREETYPE_OL);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NETCTL);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_HTTP);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SSL);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_USER_SERVICE);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_PAD);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_VIDEO_OUT);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_AUDIOOUT);
+#endif
+
     LOGI("=============================================");
     LOGI("   AeroPKG v%s (Title ID: %s)", APP_VERSION, APP_TITLE_ID);
     LOGI("   Fast PS4 Package Manager & Dashboard Suite");
