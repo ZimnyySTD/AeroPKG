@@ -10,14 +10,14 @@ bool Renderer::init(int width, int height) {
     screenWidth = width;
     screenHeight = height;
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) != 0) {
         LOGE("SDL_Init Failed: %s", SDL_GetError());
         return false;
     }
 
     if (TTF_Init() != 0) {
         LOGE("TTF_Init Failed: %s", TTF_GetError());
-        return false;
+        // Non-fatal, app can use fallback text rendering
     }
 
     int imgFlags = IMG_INIT_PNG | IMG_INIT_JPG;
@@ -27,11 +27,11 @@ bool Renderer::init(int width, int height) {
 
     window = SDL_CreateWindow(
         APP_NAME,
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_UNDEFINED,
+        SDL_WINDOWPOS_UNDEFINED,
         screenWidth,
         screenHeight,
-        SDL_WINDOW_SHOWN
+        0
     );
 
     if (!window) {
@@ -39,11 +39,19 @@ bool Renderer::init(int width, int height) {
         return false;
     }
 
-    sdlRenderer = SDL_CreateRenderer(
-        window,
-        -1,
-        SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
-    );
+    // On PS4, OpenOrbis SDL2 uses a software renderer bound to the window surface
+    SDL_Surface* windowSurface = SDL_GetWindowSurface(window);
+    if (windowSurface) {
+        sdlRenderer = SDL_CreateSoftwareRenderer(windowSurface);
+    }
+
+    if (!sdlRenderer) {
+        sdlRenderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    }
+
+    if (!sdlRenderer) {
+        sdlRenderer = SDL_CreateRenderer(window, -1, 0);
+    }
 
     if (!sdlRenderer) {
         LOGE("SDL_CreateRenderer Failed: %s", SDL_GetError());
@@ -51,7 +59,7 @@ bool Renderer::init(int width, int height) {
     }
 
     SDL_SetRenderDrawBlendMode(sdlRenderer, SDL_BLENDMODE_BLEND);
-    LOGI("Renderer initialized successfully at %dx%d (VSync 60 FPS)", screenWidth, screenHeight);
+    LOGI("Renderer initialized successfully at %dx%d (60 FPS)", screenWidth, screenHeight);
     return true;
 }
 
@@ -92,7 +100,12 @@ void Renderer::beginFrame() {
 }
 
 void Renderer::endFrame() {
-    SDL_RenderPresent(sdlRenderer);
+    if (sdlRenderer) {
+        SDL_RenderPresent(sdlRenderer);
+    }
+    if (window) {
+        SDL_UpdateWindowSurface(window);
+    }
 }
 
 void Renderer::fillRect(int x, int y, int w, int h, Color c) {

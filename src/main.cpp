@@ -11,6 +11,7 @@
 #ifdef __ORBIS__
 #include <orbis/Sysmodule.h>
 #include <orbis/libkernel.h>
+#include <orbis/Net.h>
 #endif
 
 #include <iostream>
@@ -32,14 +33,19 @@ int main(int argc, char* argv[]) {
 #ifdef __ORBIS__
     // Load required system modules to prevent unresolved NID crashes on PS4
     sceSysmoduleLoadModule(ORBIS_SYSMODULE_FREETYPE_OL);
-    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET);
-    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NETCTL);
-    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_HTTP);
-    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SSL);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_USER_SERVICE);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_PAD);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_VIDEO_OUT);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_AUDIOOUT);
+
+    // Initialize networking stack for embedded web server and remote package sender
+    if (sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET) >= 0) {
+        sceNetInit();
+        sceNetPoolCreate("AeroNetPool", 64 * 1024, 0);
+    }
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NETCTL);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_HTTP);
+    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SSL);
 #endif
 
     LOGI("=============================================");

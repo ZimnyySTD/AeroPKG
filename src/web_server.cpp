@@ -47,7 +47,7 @@ bool WebServer::start(int port) {
     serverPort = port;
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket < 0) {
-        LOGE("Failed to create web server socket");
+        LOGE("Failed to create web server socket (networking may be offline)");
         return false;
     }
 
@@ -75,8 +75,16 @@ bool WebServer::start(int port) {
     }
 
     isRunning = true;
-    serverThread = std::thread(&WebServer::runServer, this);
-    LOGI("AeroPKG Web Server active at http://%s:%d", getIpAddress().c_str(), serverPort);
+    try {
+        serverThread = std::thread(&WebServer::runServer, this);
+        LOGI("AeroPKG Web Server active at http://%s:%d", getIpAddress().c_str(), serverPort);
+    } catch (const std::exception& e) {
+        LOGE("Failed to start web server worker thread: %s", e.what());
+        close(serverSocket);
+        serverSocket = -1;
+        isRunning = false;
+        return false;
+    }
     return true;
 }
 
