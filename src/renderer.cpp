@@ -127,7 +127,8 @@ TTF_Font* Renderer::getFont(int size) {
     const char* fontPaths[] = {
         "/app0/assets/font.ttf",
         "/system/common/font/DFHEIB5-MP-R-01.ttf",
-        "/system/common/font/default.ttf"
+        "/system/common/font/default.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     };
 
     TTF_Font* font = nullptr;
@@ -166,8 +167,11 @@ void Renderer::drawText(const std::string& text, int x, int y, int fontSize, Col
 }
 
 int Renderer::getTextWidth(const std::string& text, int fontSize) {
+    if (text.empty()) return 0;
     TTF_Font* font = getFont(fontSize);
-    if (!font || text.empty()) return 0;
+    if (!font) {
+        return (int)text.length() * (fontSize * 3 / 5);
+    }
     int w = 0, h = 0;
     TTF_SizeUTF8(font, text.c_str(), &w, &h);
     return w;
