@@ -11,41 +11,31 @@
 #ifdef __ORBIS__
 #include <orbis/Sysmodule.h>
 #include <orbis/libkernel.h>
-#include <orbis/Net.h>
 #endif
 
 #include <iostream>
 #include <string>
 
 enum ViewTab {
-    TAB_DASHBOARD = 0,    // Installed games, XMB reorder, icon/title editor
-    TAB_USB_INSTALLER,    // Scan USB for PKGs, batch install all
-    TAB_FPKGI_CATALOG,    // games.json repo browser, search, download
-    TAB_AVATAR_SUITE,     // User profile avatar changer & presets
-    TAB_STORAGE_CLEANER,  // Temporary cache & broken download purge
+    TAB_DASHBOARD = 0,
+    TAB_USB_INSTALLER,
+    TAB_FPKGI_CATALOG,
+    TAB_AVATAR_SUITE,
+    TAB_STORAGE_CLEANER,
     TAB_COUNT
 };
 
 int main(int argc, char* argv[]) {
-    // Disable stdout buffering for instant logging on PS4 serial / Klog
     setvbuf(stdout, NULL, _IONBF, 0);
 
 #ifdef __ORBIS__
-    // Load required system modules to prevent unresolved NID crashes on PS4
+    // Load only modules needed by the first frame. Networking is optional and
+    // must not be initialized before the application has rendered safely.
     sceSysmoduleLoadModule(ORBIS_SYSMODULE_FREETYPE_OL);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_USER_SERVICE);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_PAD);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_VIDEO_OUT);
     sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_AUDIOOUT);
-
-    // Initialize networking stack for embedded web server and remote package sender
-    if (sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NET) >= 0) {
-        sceNetInit();
-        sceNetPoolCreate("AeroNetPool", 64 * 1024, 0);
-    }
-    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_NETCTL);
-    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_HTTP);
-    sceSysmoduleLoadModuleInternal(ORBIS_SYSMODULE_INTERNAL_SSL);
 #endif
 
     LOGI("=============================================");
@@ -55,7 +45,7 @@ int main(int argc, char* argv[]) {
 
     Renderer renderer;
     if (!renderer.init(1920, 1080)) {
-        LOGE("Failed to initialize 60 FPS graphics engine");
+        LOGE("Failed to initialize graphics engine");
         return -1;
     }
 
@@ -75,21 +65,19 @@ int main(int argc, char* argv[]) {
     avatarMgr.init();
 
     StorageCleaner cleaner;
-
     WebServer webServer(&appEditor, &bgftService, &avatarMgr);
-    webServer.start(WEB_SERVER_PORT);
+    const bool webServerStarted = false;
 
     ViewTab currentTab = TAB_DASHBOARD;
     int selectedIndex = 0;
     bool isReorderMode = false;
     int reorderSourceIndex = -1;
-    std::string statusMessage = "Ready. Web Control: http://" + webServer.getIpAddress() + ":8080";
+    std::string statusMessage = "Ready.";
 
     bool running = true;
     while (running && !input.shouldQuit()) {
         input.update();
 
-        // Global Tab Navigation: L1 and R1
         if (input.isJustPressed(BTN_L1)) {
             currentTab = (ViewTab)((currentTab - 1 + TAB_COUNT) % TAB_COUNT);
             selectedIndex = 0;
@@ -101,7 +89,6 @@ int main(int argc, char* argv[]) {
             isReorderMode = false;
         }
 
-        // Handle Tab-Specific Inputs
         if (currentTab == TAB_DASHBOARD) {
             const auto& apps = appEditor.getInstalledApps();
             if (!apps.empty()) {
@@ -117,22 +104,16 @@ int main(int argc, char* argv[]) {
                     }
                     selectedIndex++;
                 }
-
-                // Square: Toggle Interactive XMB Move Mode (1st, 2nd, 3rd)
                 if (input.isJustPressed(BTN_SQUARE)) {
                     isReorderMode = !isReorderMode;
                     reorderSourceIndex = selectedIndex;
                     statusMessage = isReorderMode ? "Reorder Mode: Use UP/DOWN to move game slot, SQUARE to confirm"
                                                   : "Slot confirmed. Press START/OPTIONS to apply to PS4 Home Screen.";
                 }
-
-                // Triangle: Quick-Sort Presets
                 if (input.isJustPressed(BTN_TRIANGLE)) {
                     appEditor.sortAppsAlphabetical();
                     statusMessage = "Sorted A-Z. Press OPTIONS to apply to PS4 Home Screen.";
                 }
-
-                // Options: Apply XMB Order & Soft-Restart ShellCore
                 if (input.isJustPressed(BTN_OPTIONS)) {
                     appEditor.applyXmbOrder();
                     statusMessage = "Applying order to app.db and reloading PS4 ShellCore...";
@@ -145,11 +126,9 @@ int main(int argc, char* argv[]) {
                 statusMessage = "Refreshed USB packages.";
             }
             if (input.isJustPressed(BTN_SQUARE)) {
-                if (bgftService.enqueueAllDiscovered()) {
-                    statusMessage = "Enqueued ALL USB packages for background installation!";
-                } else {
-                    statusMessage = "No USB packages found to install.";
-                }
+                statusMessage = bgftService.enqueueAllDiscovered()
+                    ? "Enqueued USB packages for background installation!"
+                    : "No USB packages found to install.";
             }
         } else if (currentTab == TAB_STORAGE_CLEANER) {
             if (input.isJustPressed(BTN_TRIANGLE)) {
@@ -162,12 +141,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // ==========================================
-        // Rendering Frame
-        // ==========================================
         renderer.beginFrame();
-
-        // 1. Top Header & Tab Bar
         renderer.fillRect(0, 0, 1920, 80, Color::CardBg());
         renderer.drawText("AeroPKG", 40, 24, 32, Color::AccentBlue());
 
@@ -189,36 +163,23 @@ int main(int argc, char* argv[]) {
             tabX += 290;
         }
 
-        // 2. Main Tab Body
         if (currentTab == TAB_DASHBOARD) {
             const auto& apps = appEditor.getInstalledApps();
             renderer.drawText("Installed Games & Homebrew (Manage Order & Titles)", 40, 110, 26, Color::White());
-
             int y = 160;
             int startIdx = std::max(0, selectedIndex - 3);
             int endIdx = std::min((int)apps.size(), startIdx + 7);
-
             for (int i = startIdx; i < endIdx; ++i) {
                 bool isSelected = (i == selectedIndex);
                 Color cardColor = isSelected ? (isReorderMode ? Color::Warning() : Color::CardSelected()) : Color::CardBg();
-
                 renderer.fillRect(40, y, 1840, 90, cardColor);
                 if (isSelected) {
                     renderer.drawRect(40, y, 1840, 90, isReorderMode ? Color::Warning() : Color::AccentBlue());
                 }
-
-                // Slot number (1st, 2nd, etc.)
-                std::string slotText = "#" + std::to_string(i + 1);
-                renderer.drawText(slotText, 60, y + 30, 24, isSelected ? Color::AccentCyan() : Color::TextMuted());
-
-                // Title Icon preview
+                renderer.drawText("#" + std::to_string(i + 1), 60, y + 30, 24, isSelected ? Color::AccentCyan() : Color::TextMuted());
                 renderer.drawImage(apps[i].iconPath, 140, y + 10, 70, 70);
-
-                // Title Name and ID
                 renderer.drawText(apps[i].titleName, 230, y + 20, 26, Color::White());
-                std::string sub = apps[i].titleId + " | Slot: " + std::to_string(i + 1);
-                renderer.drawText(sub, 230, y + 54, 18, Color::TextMuted());
-
+                renderer.drawText(apps[i].titleId + " | Slot: " + std::to_string(i + 1), 230, y + 54, 18, Color::TextMuted());
                 y += 105;
             }
         } else if (currentTab == TAB_USB_INSTALLER) {
@@ -243,33 +204,29 @@ int main(int argc, char* argv[]) {
             for (size_t i = 0; i < std::min((size_t)7, items.size()); ++i) {
                 renderer.fillRect(40, y, 1840, 80, Color::CardBg());
                 renderer.drawText(items[i].name, 60, y + 16, 24, Color::White());
-                std::string meta = items[i].titleId + " [" + items[i].region + "] - " + items[i].type;
-                renderer.drawText(meta, 60, y + 48, 18, Color::AccentCyan());
+                renderer.drawText(items[i].titleId + " [" + items[i].region + "] - " + items[i].type, 60, y + 48, 18, Color::AccentCyan());
                 y += 95;
             }
         } else if (currentTab == TAB_AVATAR_SUITE) {
             renderer.drawText("Current User Profile Avatar Suite", 40, 110, 26, Color::White());
             renderer.drawText("User ID: " + avatarMgr.getCurrentUserId(), 60, 170, 22, Color::AccentCyan());
-            renderer.drawText("Upload via Web: Open http://" + webServer.getIpAddress() + ":8080 on your phone/PC", 60, 210, 22, Color::White());
+            renderer.drawText(webServerStarted ? "Web Control enabled" : "Web Control disabled during safe PS4 startup", 60, 210, 22, Color::White());
             renderer.drawImage(avatarMgr.getCurrentAvatarPath(), 60, 260, 160, 160);
         } else if (currentTab == TAB_STORAGE_CLEANER) {
             renderer.drawText("Storage & Residual Package Cleaner", 40, 110, 26, Color::White());
-            std::string rec = "Reclaimable Storage: " + std::to_string(cleaner.getTotalReclaimableBytes() / (1024 * 1024)) + " MB";
-            renderer.drawText(rec, 60, 170, 24, Color::Warning());
+            renderer.drawText("Reclaimable Storage: " + std::to_string(cleaner.getTotalReclaimableBytes() / (1024 * 1024)) + " MB", 60, 170, 24, Color::Warning());
             renderer.drawText("Press TRIANGLE to Scan, SQUARE to Purge all temporary download remnants", 60, 220, 20, Color::TextMuted());
         }
 
-        // 3. Bottom Status Bar & Controller Guide
         renderer.fillRect(0, 1010, 1920, 70, Color::CardBg());
         renderer.drawText(statusMessage, 40, 1030, 20, Color::AccentCyan());
-
-        std::string controls = "[L1/R1] Tabs   [X] Select   [SQUARE] Move/Batch   [TRIANGLE] Options/Scan   [OPTIONS] Reload XMB";
-        renderer.drawText(controls, 1050, 1030, 20, Color::TextMuted());
-
+        renderer.drawText("[L1/R1] Tabs   [X] Select   [SQUARE] Move/Batch   [TRIANGLE] Options/Scan   [OPTIONS] Reload XMB", 1050, 1030, 20, Color::TextMuted());
         renderer.endFrame();
     }
 
-    webServer.stop();
+    if (webServerStarted) {
+        webServer.stop();
+    }
     bgftService.shutdown();
     renderer.shutdown();
 
