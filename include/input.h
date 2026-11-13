@@ -42,6 +42,7 @@ private:
     uint32_t justReleasedButtons = 0;
 
     SDL_GameController* controller = nullptr;
+    SDL_Joystick* joystick = nullptr;
     bool quitRequested = false;
 
     // Repeat timer for smooth menu navigation
