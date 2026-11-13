@@ -17,7 +17,6 @@ bool Renderer::init(int width, int height) {
 
     if (TTF_Init() != 0) {
         LOGE("TTF_Init Failed: %s", TTF_GetError());
-        // Non-fatal, app can use fallback text rendering
     }
 
     int imgFlags = IMG_INIT_PNG | IMG_INIT_JPG;
@@ -36,25 +35,20 @@ bool Renderer::init(int width, int height) {
 
     if (!window) {
         LOGE("SDL_CreateWindow Failed: %s", SDL_GetError());
+        shutdown();
         return false;
     }
 
-    // On PS4, OpenOrbis SDL2 uses a software renderer bound to the window surface
-    SDL_Surface* windowSurface = SDL_GetWindowSurface(window);
-    if (windowSurface) {
-        sdlRenderer = SDL_CreateSoftwareRenderer(windowSurface);
-    }
-
+    // Keep a single renderer path. Mixing a surface renderer with
+    // SDL_RenderPresent is unsupported by some console SDL ports.
+    sdlRenderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!sdlRenderer) {
         sdlRenderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     }
 
     if (!sdlRenderer) {
-        sdlRenderer = SDL_CreateRenderer(window, -1, 0);
-    }
-
-    if (!sdlRenderer) {
         LOGE("SDL_CreateRenderer Failed: %s", SDL_GetError());
+        shutdown();
         return false;
     }
 
@@ -94,6 +88,7 @@ void Renderer::shutdown() {
 }
 
 void Renderer::beginFrame() {
+    if (!sdlRenderer) return;
     Color bg = Color::DarkBg();
     SDL_SetRenderDrawColor(sdlRenderer, bg.r, bg.g, bg.b, bg.a);
     SDL_RenderClear(sdlRenderer);
@@ -103,30 +98,29 @@ void Renderer::endFrame() {
     if (sdlRenderer) {
         SDL_RenderPresent(sdlRenderer);
     }
-    if (window) {
-        SDL_UpdateWindowSurface(window);
-    }
 }
 
 void Renderer::fillRect(int x, int y, int w, int h, Color c) {
+    if (!sdlRenderer) return;
     SDL_SetRenderDrawColor(sdlRenderer, c.r, c.g, c.b, c.a);
     SDL_Rect rect = {x, y, w, h};
     SDL_RenderFillRect(sdlRenderer, &rect);
 }
 
 void Renderer::drawRect(int x, int y, int w, int h, Color c) {
+    if (!sdlRenderer) return;
     SDL_SetRenderDrawColor(sdlRenderer, c.r, c.g, c.b, c.a);
     SDL_Rect rect = {x, y, w, h};
     SDL_RenderDrawRect(sdlRenderer, &rect);
 }
 
 void Renderer::drawLine(int x1, int y1, int x2, int y2, Color c) {
+    if (!sdlRenderer) return;
     SDL_SetRenderDrawColor(sdlRenderer, c.r, c.g, c.b, c.a);
     SDL_RenderDrawLine(sdlRenderer, x1, y1, x2, y2);
 }
 
 void Renderer::drawRoundedRect(int x, int y, int w, int h, int radius, Color c) {
-    // Smooth card background with rounded aesthetics
     fillRect(x + radius, y, w - 2 * radius, h, c);
     fillRect(x, y + radius, w, h - 2 * radius, c);
 }
@@ -136,7 +130,6 @@ TTF_Font* Renderer::getFont(int size) {
         return fonts[size];
     }
 
-    // Default system font or bundled font
     const char* fontPaths[] = {
         "/app0/assets/fonts/font.ttf",
         "/app0/assets/font.ttf",
@@ -152,7 +145,6 @@ TTF_Font* Renderer::getFont(int size) {
     }
 
     if (!font) {
-        // Fallback placeholder font handling
         return nullptr;
     }
 
@@ -161,7 +153,7 @@ TTF_Font* Renderer::getFont(int size) {
 }
 
 void Renderer::drawText(const std::string& text, int x, int y, int fontSize, Color color, bool centered) {
-    if (text.empty()) return;
+    if (text.empty() || !sdlRenderer) return;
 
     TTF_Font* font = getFont(fontSize);
     if (!font) return;
@@ -192,6 +184,7 @@ int Renderer::getTextWidth(const std::string& text, int fontSize) {
 }
 
 SDL_Texture* Renderer::loadTexture(const std::string& path) {
+    if (!sdlRenderer || path.empty()) return nullptr;
     if (textureCache.find(path) != textureCache.end()) {
         return textureCache[path];
     }
@@ -211,7 +204,7 @@ SDL_Texture* Renderer::loadTexture(const std::string& path) {
 }
 
 void Renderer::drawTexture(SDL_Texture* texture, int x, int y, int w, int h) {
-    if (!texture) return;
+    if (!sdlRenderer || !texture) return;
     SDL_Rect dest = {x, y, w, h};
     SDL_RenderCopy(sdlRenderer, texture, nullptr, &dest);
 }
@@ -221,7 +214,6 @@ void Renderer::drawImage(const std::string& path, int x, int y, int w, int h) {
     if (tex) {
         drawTexture(tex, x, y, w, h);
     } else {
-        // Fallback placeholder icon box
         fillRect(x, y, w, h, Color::CardSelected());
         drawRect(x, y, w, h, Color::AccentBlue());
     }
