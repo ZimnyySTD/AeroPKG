@@ -27,8 +27,9 @@ C_OBJS      := $(patsubst $(PROJDIR)/%.c, $(INTDIR)/%.o, $(CFILES))
 CPP_OBJS    := $(patsubst $(PROJDIR)/%.cpp, $(INTDIR)/%.o, $(CPPFILES))
 OBJS        := $(C_OBJS) $(CPP_OBJS) $(INTDIR)/sqlite3.o $(INTDIR)/SDL_ttf.o
 
-# Define final C/C++ flags
-TARGET_FLAGS := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
+# Define final C/C++ flags. __ORBIS__ is required by main.cpp to compile
+# the PS4 system-module and networking initialization.
+TARGET_FLAGS := --target=x86_64-pc-freebsd12-elf -fPIC -funwind-tables -isysroot $(TOOLCHAIN) -isystem $(TOOLCHAIN)/include -D__ORBIS__ -D_GNU_SOURCE -D_POSIX_C_SOURCE=200809L
 CFLAGS      := $(TARGET_FLAGS) -c -Iinclude -I$(SQLITE_DIR)
 CXXFLAGS    := $(TARGET_FLAGS) -c -Iinclude -I$(SQLITE_DIR) -isystem $(TOOLCHAIN)/include/c++/v1 -std=c++17
 SQLITEFLAGS := $(TARGET_FLAGS) -c -I$(SQLITE_DIR) -DSQLITE_THREADSAFE=0 -DSQLITE_DEFAULT_MEMSTATUS=0
