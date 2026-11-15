@@ -9,6 +9,8 @@
 #include <chrono>
 #include <fstream>
 #include <set>
+#include <cerrno>
+#include <cstring>
 
 AppEditor::AppEditor() {}
 AppEditor::~AppEditor() {}
@@ -27,12 +29,14 @@ static std::string metaDir(const std::string& titleId) {
 }
 
 static std::string metaIconPath(const std::string& titleId) {
-    const std::string base = metaDir(titleId) + "/";
-    const char* names[] = {"icon0.png", "icon0.PNG"};
-    for (const char* name : names) {
-        std::string path = base + name;
-        struct stat st{};
-        if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) return path;
+    const char* roots[] = {PATH_USER_APPMETA, PATH_SYSTEM_APPMETA, PATH_MMS_APPMETA, PATH_DATA_APPMETA};
+    const char* names[] = {"icon0.png", "icon0.PNG", "icon0.dds"};
+    for (const char* root : roots) {
+        for (const char* name : names) {
+            std::string path = std::string(root) + "/" + titleId + "/" + name;
+            struct stat st{};
+            if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) return path;
+        }
     }
     return "";
 }
@@ -45,8 +49,8 @@ static uint32_t readU32(const unsigned char* p) {
     return static_cast<uint32_t>(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
 }
 
-static std::string readSfoField(const std::string& titleId, const std::string& wantedKey) {
-    std::ifstream file(metaDir(titleId) + "/param.sfo", std::ios::binary);
+static std::string readSfoField(const std::string& sfoPath, const std::string& wantedKey) {
+    std::ifstream file(sfoPath, std::ios::binary);
     if (!file.is_open()) return "";
     std::vector<unsigned char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     if (data.size() < 20 || data[0] != 'P' || data[1] != 'S' || data[2] != 'F' || data[3] != 0) return "";
@@ -65,7 +69,9 @@ static std::string readSfoField(const std::string& titleId, const std::string& w
         size_t keyPos = static_cast<size_t>(keyOffset) + keyRel;
         size_t valuePos = static_cast<size_t>(dataOffset) + valueRel;
         if (keyPos >= data.size() || valuePos >= data.size()) continue;
-        std::string key(reinterpret_cast<const char*>(&data[keyPos]));
+        size_t keyLength = 0;
+        while (keyPos + keyLength < data.size() && data[keyPos + keyLength] != 0) ++keyLength;
+        std::string key(reinterpret_cast<const char*>(&data[keyPos]), keyLength);
         if (key != wantedKey) continue;
         size_t safeLength = std::min<size_t>(length, data.size() - valuePos);
         while (safeLength > 0 && data[valuePos + safeLength - 1] == 0) --safeLength;
@@ -79,30 +85,82 @@ static bool isDirectory(const std::string& path) {
     return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
 }
 
-static void scanAppMetadata(std::vector<InstalledApp>& apps) {
-    DIR* dir = opendir(PATH_USER_APPMETA);
-    if (!dir) return;
-    std::set<std::string> seen;
-    for (const auto& app : apps) seen.insert(app.titleId);
-
+static uint64_t directorySize(const std::string& path, int depth = 0) {
+    if (depth > 8) return 0;
+    struct stat st{};
+    if (stat(path.c_str(), &st) != 0) return 0;
+    if (!S_ISDIR(st.st_mode)) return static_cast<uint64_t>(st.st_size);
+    uint64_t total = 0;
+    DIR* dir = opendir(path.c_str());
+    if (!dir) return 0;
     struct dirent* entry;
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_name[0] == '.') continue;
-        std::string titleId = entry->d_name;
-        if (!isDirectory(metaDir(titleId)) || !seen.insert(titleId).second) continue;
+        total += directorySize(path + "/" + entry->d_name, depth + 1);
+    }
+    closedir(dir);
+    return total;
+}
+
+static void scanAppMetadata(std::vector<InstalledApp>& apps) {
+    std::set<std::string> seen;
+    for (const auto& app : apps) seen.insert(app.titleId);
+
+    const char* metaRoots[] = {PATH_USER_APPMETA, PATH_SYSTEM_APPMETA, PATH_MMS_APPMETA, PATH_DATA_APPMETA};
+    for (const char* root : metaRoots) {
+        DIR* dir = opendir(root);
+        if (!dir) {
+            LOGI("App metadata root unavailable: %s (errno=%d: %s)", root, errno, strerror(errno));
+            continue;
+        }
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (entry->d_name[0] == '.') continue;
+            std::string directory = std::string(root) + "/" + entry->d_name;
+            if (!isDirectory(directory)) continue;
+            const std::string sfoPath = directory + "/param.sfo";
+            std::string titleId = readSfoField(sfoPath, "TITLE_ID");
+            if (titleId.empty()) titleId = entry->d_name;
+            if (!seen.insert(titleId).second) continue;
+            InstalledApp app;
+            app.titleId = titleId;
+            app.titleName = readSfoField(sfoPath, "TITLE");
+            if (app.titleName.empty()) app.titleName = titleId;
+            app.version = readSfoField(sfoPath, "VERSION");
+            app.iconPath = metaIconPath(titleId);
+            app.lastPlayedTime = 0;
+            app.sizeBytes = directorySize(std::string(PATH_USER_APP) + "/" + titleId);
+            app.category = 0;
+            app.isModified = false;
+            apps.push_back(app);
+        }
+        closedir(dir);
+    }
+
+    DIR* appRoot = opendir(PATH_USER_APP);
+    if (!appRoot) return;
+    struct dirent* entry;
+    while ((entry = readdir(appRoot)) != nullptr) {
+        if (entry->d_name[0] == '.') continue;
+        const std::string titleDirectory = std::string(PATH_USER_APP) + "/" + entry->d_name;
+        if (!isDirectory(titleDirectory)) continue;
+        const std::string sfoPath = titleDirectory + "/sce_sys/param.sfo";
+        std::string titleId = readSfoField(sfoPath, "TITLE_ID");
+        if (titleId.empty()) titleId = entry->d_name;
+        if (!seen.insert(titleId).second) continue;
         InstalledApp app;
         app.titleId = titleId;
-        app.titleName = readSfoField(titleId, "TITLE");
+        app.titleName = readSfoField(sfoPath, "TITLE");
         if (app.titleName.empty()) app.titleName = titleId;
-        app.version = readSfoField(titleId, "VERSION");
+        app.version = readSfoField(sfoPath, "VERSION");
         app.iconPath = metaIconPath(titleId);
         app.lastPlayedTime = 0;
-        app.sizeBytes = 0;
+        app.sizeBytes = directorySize(titleDirectory);
         app.category = 0;
         app.isModified = false;
         apps.push_back(app);
     }
-    closedir(dir);
+    closedir(appRoot);
 }
 
 bool AppEditor::backupDatabase() {
@@ -131,9 +189,9 @@ static bool loadAppsQuery(sqlite3* db, const char* query, std::vector<InstalledA
         const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         InstalledApp app;
         app.titleId = id;
-        app.titleName = (name && *name) ? name : readSfoField(app.titleId, "TITLE");
+        app.titleName = (name && *name) ? name : readSfoField(metaDir(app.titleId) + "/param.sfo", "TITLE");
         if (app.titleName.empty()) app.titleName = app.titleId;
-        app.version = readSfoField(app.titleId, "VERSION");
+        app.version = readSfoField(metaDir(app.titleId) + "/param.sfo", "VERSION");
         app.category = sqlite3_column_int(stmt, 2);
         app.lastPlayedTime = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
         app.iconPath = metaIconPath(app.titleId);
@@ -167,7 +225,7 @@ bool AppEditor::refreshInstalledApps() {
         if (db) sqlite3_close(db);
     }
 
-    if (apps.empty()) scanAppMetadata(apps);
+    scanAppMetadata(apps);
     std::sort(apps.begin(), apps.end(), [](const InstalledApp& a, const InstalledApp& b) { return a.titleName < b.titleName; });
     LOGI("Loaded %zu installed applications (%s)", apps.size(), loadedFromDb ? "app.db" : "appmeta");
     return !apps.empty();
