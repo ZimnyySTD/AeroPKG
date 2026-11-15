@@ -21,6 +21,17 @@ static bool copyFile(const std::string& src, const std::string& dst) {
     return out.good();
 }
 
+static std::string metaIconPath(const std::string& titleId) {
+    const std::string base = std::string(PATH_USER_APPMETA) + "/" + titleId + "/";
+    const char* names[] = {"icon0.png", "icon0.PNG"};
+    for (const char* name : names) {
+        std::string path = base + name;
+        struct stat st;
+        if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) return path;
+    }
+    return "";
+}
+
 bool AppEditor::backupDatabase() {
     LOGI("Backing up app.db from %s to %s", PATH_APP_DB, PATH_APP_DB_BAK);
     return copyFile(PATH_APP_DB, PATH_APP_DB_BAK);
@@ -32,14 +43,7 @@ bool AppEditor::restoreDatabase() {
 }
 
 std::string AppEditor::getMetaIconPath(const std::string& titleId) {
-    const std::string base = std::string(PATH_USER_APPMETA) + "/" + titleId + "/";
-    const char* names[] = {"icon0.png", "icon0.PNG"};
-    for (const char* name : names) {
-        std::string path = base + name;
-        struct stat st;
-        if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) return path;
-    }
-    return "";
+    return metaIconPath(titleId);
 }
 
 static bool loadAppsQuery(sqlite3* db, const char* query, std::vector<InstalledApp>& apps) {
@@ -57,7 +61,7 @@ static bool loadAppsQuery(sqlite3* db, const char* query, std::vector<InstalledA
         app.titleName = (name && *name) ? name : app.titleId;
         app.category = sqlite3_column_int(stmt, 2);
         app.lastPlayedTime = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
-        app.iconPath = AppEditor().getMetaIconPath(app.titleId);
+        app.iconPath = metaIconPath(app.titleId);
         app.version = "";
         app.sizeBytes = 0;
         app.isModified = false;
