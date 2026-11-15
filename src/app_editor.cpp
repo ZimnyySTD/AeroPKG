@@ -22,13 +22,54 @@ static bool copyFile(const std::string& src, const std::string& dst) {
     return out.good();
 }
 
+static std::string metaDir(const std::string& titleId) {
+    return std::string(PATH_USER_APPMETA) + "/" + titleId;
+}
+
 static std::string metaIconPath(const std::string& titleId) {
-    const std::string base = std::string(PATH_USER_APPMETA) + "/" + titleId + "/";
+    const std::string base = metaDir(titleId) + "/";
     const char* names[] = {"icon0.png", "icon0.PNG"};
     for (const char* name : names) {
         std::string path = base + name;
         struct stat st{};
         if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) return path;
+    }
+    return "";
+}
+
+static uint16_t readU16(const unsigned char* p) {
+    return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+
+static uint32_t readU32(const unsigned char* p) {
+    return static_cast<uint32_t>(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24));
+}
+
+static std::string readSfoField(const std::string& titleId, const std::string& wantedKey) {
+    std::ifstream file(metaDir(titleId) + "/param.sfo", std::ios::binary);
+    if (!file.is_open()) return "";
+    std::vector<unsigned char> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (data.size() < 20 || data[0] != 'P' || data[1] != 'S' || data[2] != 'F' || data[3] != 0) return "";
+
+    const uint32_t keyOffset = readU32(&data[8]);
+    const uint32_t dataOffset = readU32(&data[12]);
+    const uint32_t count = readU32(&data[16]);
+    const size_t indexStart = 20;
+    if (keyOffset >= data.size() || dataOffset >= data.size() || count > 4096 || indexStart + count * 16 > data.size()) return "";
+
+    for (uint32_t i = 0; i < count; ++i) {
+        const unsigned char* entry = &data[indexStart + i * 16];
+        const uint16_t keyRel = readU16(entry);
+        const uint32_t length = readU32(entry + 4);
+        const uint32_t valueRel = readU32(entry + 12);
+        size_t keyPos = static_cast<size_t>(keyOffset) + keyRel;
+        size_t valuePos = static_cast<size_t>(dataOffset) + valueRel;
+        if (keyPos >= data.size() || valuePos >= data.size()) continue;
+        std::string key(reinterpret_cast<const char*>(&data[keyPos]));
+        if (key != wantedKey) continue;
+        size_t safeLength = std::min<size_t>(length, data.size() - valuePos);
+        while (safeLength > 0 && data[valuePos + safeLength - 1] == 0) --safeLength;
+        return std::string(reinterpret_cast<const char*>(&data[valuePos]), safeLength);
     }
     return "";
 }
@@ -41,20 +82,19 @@ static bool isDirectory(const std::string& path) {
 static void scanAppMetadata(std::vector<InstalledApp>& apps) {
     DIR* dir = opendir(PATH_USER_APPMETA);
     if (!dir) return;
-
     std::set<std::string> seen;
     for (const auto& app : apps) seen.insert(app.titleId);
+
     struct dirent* entry;
     while ((entry = readdir(dir)) != nullptr) {
         if (entry->d_name[0] == '.') continue;
         std::string titleId = entry->d_name;
-        std::string appDir = std::string(PATH_USER_APPMETA) + "/" + titleId;
-        if (!isDirectory(appDir) || !seen.insert(titleId).second) continue;
-
+        if (!isDirectory(metaDir(titleId)) || !seen.insert(titleId).second) continue;
         InstalledApp app;
         app.titleId = titleId;
-        app.titleName = titleId;
-        app.version = "";
+        app.titleName = readSfoField(titleId, "TITLE");
+        if (app.titleName.empty()) app.titleName = titleId;
+        app.version = readSfoField(titleId, "VERSION");
         app.iconPath = metaIconPath(titleId);
         app.lastPlayedTime = 0;
         app.sizeBytes = 0;
@@ -82,21 +122,21 @@ std::string AppEditor::getMetaIconPath(const std::string& titleId) {
 static bool loadAppsQuery(sqlite3* db, const char* query, std::vector<InstalledApp>& apps) {
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(db, query, -1, &stmt, nullptr) != SQLITE_OK) return false;
-
     std::set<std::string> seen;
     for (const auto& app : apps) seen.insert(app.titleId);
+
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         const char* id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
         if (!id || !*id || !seen.insert(id).second) continue;
-
         const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         InstalledApp app;
         app.titleId = id;
-        app.titleName = (name && *name) ? name : app.titleId;
+        app.titleName = (name && *name) ? name : readSfoField(app.titleId, "TITLE");
+        if (app.titleName.empty()) app.titleName = app.titleId;
+        app.version = readSfoField(app.titleId, "VERSION");
         app.category = sqlite3_column_int(stmt, 2);
         app.lastPlayedTime = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
         app.iconPath = metaIconPath(app.titleId);
-        app.version = "";
         app.sizeBytes = 0;
         app.isModified = false;
         apps.push_back(app);
@@ -128,9 +168,7 @@ bool AppEditor::refreshInstalledApps() {
     }
 
     if (apps.empty()) scanAppMetadata(apps);
-    std::sort(apps.begin(), apps.end(), [](const InstalledApp& a, const InstalledApp& b) {
-        return a.titleName < b.titleName;
-    });
+    std::sort(apps.begin(), apps.end(), [](const InstalledApp& a, const InstalledApp& b) { return a.titleName < b.titleName; });
     LOGI("Loaded %zu installed applications (%s)", apps.size(), loadedFromDb ? "app.db" : "appmeta");
     return !apps.empty();
 }
@@ -141,22 +179,19 @@ bool AppEditor::updateAppTitle(const std::string& titleId, const std::string& ne
     if (sqlite3_open(PATH_APP_DB, &db) != SQLITE_OK) return false;
     sqlite3_stmt* stmt = nullptr;
     bool success = false;
-    const char* query = "UPDATE tbl_appinfo SET titleName = ? WHERE titleId = ?;";
-    if (sqlite3_prepare_v2(db, query, -1, &stmt, nullptr) == SQLITE_OK) {
+    if (sqlite3_prepare_v2(db, "UPDATE tbl_appinfo SET titleName = ? WHERE titleId = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_text(stmt, 1, newTitle.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, titleId.c_str(), -1, SQLITE_TRANSIENT);
         success = sqlite3_step(stmt) == SQLITE_DONE;
         sqlite3_finalize(stmt);
     }
     sqlite3_close(db);
-    if (success) {
-        for (auto& app : apps) if (app.titleId == titleId) { app.titleName = newTitle; app.isModified = true; break; }
-    }
+    if (success) for (auto& app : apps) if (app.titleId == titleId) { app.titleName = newTitle; app.isModified = true; break; }
     return success;
 }
 
 bool AppEditor::updateAppIcon(const std::string& titleId, const std::string& newIconPath) {
-    std::string targetMetaDir = std::string(PATH_USER_APPMETA) + "/" + titleId;
+    std::string targetMetaDir = metaDir(titleId);
     mkdir(targetMetaDir.c_str(), 0777);
     std::string targetIcon = targetMetaDir + "/icon0.png";
     if (!copyFile(newIconPath, targetIcon)) return false;
@@ -168,7 +203,7 @@ bool AppEditor::exportAssets(const std::string& titleId, const std::string& dest
     mkdir(destinationDir.c_str(), 0777);
     std::string appDir = destinationDir + "/" + titleId;
     mkdir(appDir.c_str(), 0777);
-    const std::string source = std::string(PATH_USER_APPMETA) + "/" + titleId + "/";
+    const std::string source = metaDir(titleId) + "/";
     copyFile(source + "icon0.png", appDir + "/icon0.png");
     copyFile(source + "pic0.png", appDir + "/pic0.png");
     copyFile(source + "param.sfo", appDir + "/param.sfo");
