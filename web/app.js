@@ -22,13 +22,11 @@ function fetchApps() {
       renderApps(allApps);
     })
     .catch(err => {
-      console.warn('Fallback local demo:', err);
-      allApps = [
-        { titleId: 'CUSA00123', name: 'Grand Theft Auto V', lastPlayed: 1600000000 },
-        { titleId: 'CUSA07010', name: 'Horizon Zero Dawn', lastPlayed: 1600000010 },
-        { titleId: 'APKG00001', name: 'AeroPKG Manager', lastPlayed: 1600000020 }
-      ];
+      console.warn('Unable to load installed apps:', err);
+      allApps = [];
       renderApps(allApps);
+      const container = document.getElementById('appsList');
+      if (container) container.textContent = 'Unable to load installed apps from the PS4.';
     });
 }
 
