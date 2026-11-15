@@ -2,14 +2,12 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <cstring>
-#include <sstream>
+#include <algorithm>
+#include <cctype>
+#include <set>
 
 BgftService::BgftService() {}
-
-BgftService::~BgftService() {
-    shutdown();
-}
+BgftService::~BgftService() { shutdown(); }
 
 bool BgftService::init() {
     if (workerRunning) return true;
@@ -25,45 +23,56 @@ void BgftService::shutdown() {
     installingActive = false;
 }
 
-static bool endsWith(const std::string& str, const std::string& suffix) {
-    return str.length() >= suffix.length() && str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
+static std::string lowerName(const std::string& value) {
+    std::string result = value;
+    std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return result;
+}
+
+static void scanUsbDirectory(const std::string& root, int depth, std::vector<DiscoveredPkg>& output, std::set<std::string>& seen) {
+    if (depth > 4) return;
+    DIR* dir = opendir(root.c_str());
+    if (!dir) return;
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_name[0] == '.') continue;
+        std::string fullPath = root + "/" + entry->d_name;
+        struct stat st{};
+        if (lstat(fullPath.c_str(), &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) {
+            scanUsbDirectory(fullPath, depth + 1, output, seen);
+            continue;
+        }
+        if (!S_ISREG(st.st_mode)) continue;
+        std::string lower = lowerName(entry->d_name);
+        if (lower.size() < 4 || lower.substr(lower.size() - 4) != ".pkg") continue;
+        if (!seen.insert(fullPath).second) continue;
+
+        DiscoveredPkg pkg;
+        pkg.filename = entry->d_name;
+        pkg.fullPath = fullPath;
+        pkg.sizeBytes = static_cast<uint64_t>(st.st_size);
+        pkg.isSelected = true;
+        pkg.appName = pkg.filename.substr(0, pkg.filename.size() - 4);
+        pkg.titleId = "UNKNOWN";
+        output.push_back(pkg);
+    }
+    closedir(dir);
 }
 
 void BgftService::scanUsbPackages() {
     discoveredPkgs.clear();
-    const char* usbMounts[] = { PATH_USB0, PATH_USB1, "/mnt/ext0" };
-    for (const char* mount : usbMounts) {
-        DIR* dir = opendir(mount);
-        if (!dir) continue;
-        struct dirent* entry;
-        while ((entry = readdir(dir)) != nullptr) {
-            if (entry->d_name[0] == '.') continue;
-            std::string fname = entry->d_name;
-            if (!endsWith(fname, ".pkg") && !endsWith(fname, ".PKG")) continue;
-
-            std::string fullPath = std::string(mount) + "/" + fname;
-            struct stat st{};
-            if (stat(fullPath.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) continue;
-            DiscoveredPkg pkg;
-            pkg.filename = fname;
-            pkg.fullPath = fullPath;
-            pkg.sizeBytes = static_cast<uint64_t>(st.st_size);
-            pkg.isSelected = true;
-            pkg.appName = fname.substr(0, fname.find_last_of('.'));
-            pkg.titleId = "UNKNOWN";
-            discoveredPkgs.push_back(pkg);
-        }
-        closedir(dir);
-    }
+    std::set<std::string> seen;
+    const char* roots[] = {PATH_USB0, PATH_USB1, "/mnt/ext0", "/mnt/usb0/PKG", "/mnt/usb1/PKG"};
+    for (const char* root : roots) scanUsbDirectory(root, 0, discoveredPkgs, seen);
+    std::sort(discoveredPkgs.begin(), discoveredPkgs.end(), [](const DiscoveredPkg& a, const DiscoveredPkg& b) { return a.filename < b.filename; });
     LOGI("USB package scan found %zu package(s)", discoveredPkgs.size());
 }
 
 bool BgftService::enqueuePackage(const std::string& pathOrUrl, const std::string& title, bool fromUsb) {
     if (pathOrUrl.empty()) return false;
     std::lock_guard<std::mutex> lock(taskMutex);
-    for (const auto& task : tasks) {
-        if (task.filePathOrUrl == pathOrUrl && task.status != "Failed") return true;
-    }
+    for (const auto& task : tasks) if (task.filePathOrUrl == pathOrUrl && task.status != "Failed") return true;
     tasks.push_back({title, pathOrUrl, fromUsb, 0, "Queued"});
     LOGI("Enqueued PKG: %s (%s)", title.c_str(), pathOrUrl.c_str());
     return true;
@@ -109,12 +118,10 @@ void BgftService::workerLoop() {
                 }
             }
         }
-
         if (!found) {
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
             continue;
         }
-
         installingActive = true;
         const bool sent = sendBgftInstall(task.filePathOrUrl);
         std::lock_guard<std::mutex> lock(taskMutex);
