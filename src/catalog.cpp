@@ -18,7 +18,6 @@ static std::string extractJsonField(const std::string& obj, const std::string& k
     if (colon == std::string::npos) return "";
     size_t valStart = obj.find_first_not_of(" \t\r\n", colon + 1);
     if (valStart == std::string::npos) return "";
-
     if (obj[valStart] == '"') {
         size_t valEnd = obj.find('"', valStart + 1);
         return valEnd == std::string::npos ? "" : obj.substr(valStart + 1, valEnd - valStart - 1);
@@ -80,8 +79,8 @@ bool CatalogEngine::loadFromFile(const std::string& path) {
 }
 
 bool CatalogEngine::loadFromUrl(const std::string& repoUrl) {
-    LOGI("Fetching catalog from URL: %s", repoUrl.c_str());
-    std::string tmpPath = "/data/AeroPKG/temp_repo.json";
+    if (repoUrl.empty()) return false;
+    std::string tmpPath = std::string(PATH_AEROPKG_DATA) + "/temp_repo.json";
     std::string cmd = "curl -s -o " + tmpPath + " \"" + repoUrl + "\"";
     if (system(cmd.c_str()) != 0) return false;
     return loadFromFile(tmpPath);
@@ -92,12 +91,8 @@ bool CatalogEngine::loadCatalog() {
     if (loadFromFile(std::string(PATH_AEROPKG_DATA) + "/games.json")) return true;
     if (loadFromFile(std::string(PATH_USB0) + "/games.json")) return true;
     if (loadFromFile(std::string(PATH_USB1) + "/games.json")) return true;
-
-    CatalogItem sample1 = {"CUSA07010", "Horizon Zero Dawn Complete Edition", "US", "01.00", "Game", 45000000000ULL, "http://pkg.example.com/hzd.pkg", ""};
-    CatalogItem sample2 = {"CUSA08519", "God of War", "US", "01.00", "Game", 38000000000ULL, "http://pkg.example.com/gow.pkg", ""};
-    items.push_back(sample1);
-    items.push_back(sample2);
-    return true;
+    LOGI("No catalog file found; catalog is empty");
+    return false;
 }
 
 static std::string toLower(const std::string& s) {
