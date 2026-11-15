@@ -50,7 +50,7 @@ void header(Renderer& renderer, ViewTab active, const std::string& status) {
     }
     renderer.fillRect(0, 1018, 1920, 62, Color::CardBg());
     renderer.drawText(status, 48, 1038, 19, Color::AccentCyan());
-    renderer.drawText("L1/R1 Tabs   UP/DOWN Browse   X Select   SQUARE Action   TRIANGLE Scan/Sort   OPTIONS Apply", 950, 1038, 16, Color::TextMuted());
+    renderer.drawText("L1/R1 Tabs   UP/DOWN Browse   X Select   SQUARE Action   TRIANGLE Refresh   OPTIONS Apply", 950, 1038, 16, Color::TextMuted());
 }
 }
 
@@ -70,14 +70,16 @@ int main(int argc, char* argv[]) {
     input.init();
 
     AppEditor appEditor;
-    const bool appsLoaded = appEditor.refreshInstalledApps();
+    bool appsLoaded = appEditor.refreshInstalledApps();
     BgftService bgft;
     bgft.init();
+    bgft.scanUsbPackages();
     CatalogEngine catalog;
     catalog.loadCatalog();
     AvatarManager avatar;
     avatar.init();
     StorageCleaner cleaner;
+    cleaner.scanStorage();
     WebServer webServer(&appEditor, &bgft, &avatar);
     const bool webEnabled = false;
 
@@ -85,7 +87,9 @@ int main(int argc, char* argv[]) {
     int selected = 0;
     bool reorderMode = false;
     bool running = true;
-    std::string status = appsLoaded ? "Ready - installed applications loaded" : "Could not read app.db - check PS4 permissions";
+    std::string status = appsLoaded
+        ? "Ready - " + std::to_string(appEditor.getInstalledApps().size()) + " app(s), " + std::to_string(bgft.getDiscoveredPkgs().size()) + " USB package(s), " + formatBytes(cleaner.getTotalReclaimableBytes()) + " cache"
+        : "No app database access - scanning app metadata";
 
     while (running && !input.shouldQuit()) {
         input.update();
@@ -103,7 +107,11 @@ int main(int argc, char* argv[]) {
                 reorderMode = !reorderMode;
                 status = reorderMode ? "Move mode: use UP/DOWN, then SQUARE to finish" : "Order staged - press OPTIONS to apply to XMB";
             }
-            if (input.isJustPressed(BTN_TRIANGLE)) { appEditor.sortAppsAlphabetical(); selected = 0; status = "Sorted installed apps A-Z"; }
+            if (input.isJustPressed(BTN_TRIANGLE)) {
+                appsLoaded = appEditor.refreshInstalledApps();
+                selected = 0;
+                status = appsLoaded ? "Refreshed installed games and apps" : "No apps found in app.db or /user/appmeta";
+            }
             if (input.isJustPressed(BTN_OPTIONS)) {
                 status = appEditor.applyXmbOrder() ? "XMB order saved - restarting ShellCore" : "Could not save XMB order";
                 if (status.find("restarting") != std::string::npos) appEditor.softRestartShellCore();
@@ -118,7 +126,7 @@ int main(int argc, char* argv[]) {
         } else if (tab == TAB_CATALOG) {
             if (input.isJustPressed(BTN_UP) && selected > 0) --selected;
             if (input.isJustPressed(BTN_DOWN) && selected + 1 < (int)catalogItems.size()) ++selected;
-            if (input.isJustPressed(BTN_TRIANGLE)) { catalog.loadCatalog(); selected = 0; status = "Catalog refreshed from local storage and USB"; }
+            if (input.isJustPressed(BTN_TRIANGLE)) { catalog.loadCatalog(); selected = 0; status = catalog.getAllItems().empty() ? "No real games.json found on PS4 or USB" : "Catalog refreshed"; }
             if (input.isJustPressed(BTN_CROSS) && selected < (int)catalogItems.size()) {
                 const auto& item = catalogItems[selected];
                 bgft.enqueuePackage(item.pkgUrl, item.name, false);
@@ -132,7 +140,7 @@ int main(int argc, char* argv[]) {
             }
         } else if (tab == TAB_CLEANER) {
             if (input.isJustPressed(BTN_TRIANGLE)) { cleaner.scanStorage(); selected = 0; status = "Storage scan complete: " + formatBytes(cleaner.getTotalReclaimableBytes()) + " reclaimable"; }
-            if (input.isJustPressed(BTN_SQUARE)) { status = cleaner.purgeAll() ? "Selected residual files removed" : "Nothing was removed"; }
+            if (input.isJustPressed(BTN_SQUARE)) { status = cleaner.purgeAll() ? "Selected residual files removed" : "Some files could not be removed"; }
         }
 
         renderer.beginFrame();
@@ -144,7 +152,7 @@ int main(int argc, char* argv[]) {
             if (apps.empty()) {
                 panel(renderer, 48, 220, 1824, 170, Color::CardBg());
                 renderer.drawText("No installed applications were loaded", 88, 265, 26, Color::White());
-                renderer.drawText("Press TRIANGLE to refresh after checking app.db access.", 88, 312, 20, Color::TextMuted());
+                renderer.drawText("Press TRIANGLE to rescan app.db and /user/appmeta.", 88, 312, 20, Color::TextMuted());
             } else {
                 int start = std::max(0, selected - 4);
                 int end = std::min((int)apps.size(), start + 7);
@@ -156,7 +164,7 @@ int main(int argc, char* argv[]) {
                     renderer.drawText(std::to_string(i + 1), 72, y + 31, 20, chosen ? Color::AccentCyan() : Color::TextMuted());
                     renderer.drawImage(app.iconPath, 130, y + 10, 72, 72);
                     renderer.drawText(app.titleName, 230, y + 18, 25, Color::White());
-                    renderer.drawText(app.titleId + "   " + (app.category == 0 ? "GAME" : "APP"), 230, y + 55, 17, Color::TextMuted());
+                    renderer.drawText(app.titleId + "   " + (app.category == 0 ? "GAME" : "APP") + (app.version.empty() ? "" : "   " + app.version), 230, y + 55, 17, Color::TextMuted());
                     y += 104;
                 }
             }
@@ -171,10 +179,10 @@ int main(int argc, char* argv[]) {
                 renderer.drawText(pkgs[i].fullPath + "   " + formatBytes(pkgs[i].sizeBytes), 82, y + 53, 17, Color::TextMuted());
                 y += 100;
             }
-            if (pkgs.empty()) renderer.drawText("Press TRIANGLE to scan /mnt/usb0, /mnt/usb1 and /mnt/ext0", 82, 250, 22, Color::TextMuted());
+            if (pkgs.empty()) renderer.drawText("No .pkg files found. Check that the USB is mounted and packages are within four folders.", 82, 250, 22, Color::TextMuted());
         } else if (tab == TAB_CATALOG) {
             renderer.drawText("FPKGi catalog", 48, 132, 30, Color::White());
-            renderer.drawText(std::to_string(catalogItems.size()) + " catalog entries   X queues the selected package", 48, 170, 18, Color::TextMuted());
+            renderer.drawText(std::to_string(catalogItems.size()) + " real catalog entries   X queues the selected package", 48, 170, 18, Color::TextMuted());
             int y = 220;
             for (size_t i = 0; i < std::min((size_t)7, catalogItems.size()); ++i) {
                 bool chosen = (int)i == selected;
@@ -183,6 +191,7 @@ int main(int argc, char* argv[]) {
                 renderer.drawText(catalogItems[i].titleId + "   " + catalogItems[i].region + "   " + catalogItems[i].type, 82, y + 51, 17, Color::TextMuted());
                 y += 100;
             }
+            if (catalogItems.empty()) renderer.drawText("No games.json found in /data/AeroPKG, /mnt/usb0, or /mnt/usb1.", 82, 250, 22, Color::TextMuted());
         } else if (tab == TAB_AVATAR) {
             renderer.drawText("Avatar suite", 48, 132, 30, Color::White());
             panel(renderer, 48, 210, 440, 520, Color::CardBg(), true);
@@ -197,7 +206,7 @@ int main(int argc, char* argv[]) {
             renderer.drawText(formatBytes(cleaner.getTotalReclaimableBytes()), 88, 260, 48, Color::Warning());
             renderer.drawText("reclaimable storage", 90, 325, 22, Color::TextMuted());
             renderer.drawText(std::to_string(cleaner.getItems().size()) + " files selected", 90, 365, 18, Color::TextMuted());
-            renderer.drawText("TRIANGLE scans /data/pkg and /user/download", 700, 270, 22, Color::White());
+            renderer.drawText("TRIANGLE scans package, download, GoldHEN and notification caches", 700, 270, 22, Color::White());
             renderer.drawText("SQUARE removes the selected residual files", 700, 315, 20, Color::TextMuted());
         }
 
