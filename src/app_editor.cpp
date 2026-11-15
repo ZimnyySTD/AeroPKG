@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <dirent.h>
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -26,10 +27,42 @@ static std::string metaIconPath(const std::string& titleId) {
     const char* names[] = {"icon0.png", "icon0.PNG"};
     for (const char* name : names) {
         std::string path = base + name;
-        struct stat st;
+        struct stat st{};
         if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) return path;
     }
     return "";
+}
+
+static bool isDirectory(const std::string& path) {
+    struct stat st{};
+    return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+static void scanAppMetadata(std::vector<InstalledApp>& apps) {
+    DIR* dir = opendir(PATH_USER_APPMETA);
+    if (!dir) return;
+
+    std::set<std::string> seen;
+    for (const auto& app : apps) seen.insert(app.titleId);
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        if (entry->d_name[0] == '.') continue;
+        std::string titleId = entry->d_name;
+        std::string appDir = std::string(PATH_USER_APPMETA) + "/" + titleId;
+        if (!isDirectory(appDir) || !seen.insert(titleId).second) continue;
+
+        InstalledApp app;
+        app.titleId = titleId;
+        app.titleName = titleId;
+        app.version = "";
+        app.iconPath = metaIconPath(titleId);
+        app.lastPlayedTime = 0;
+        app.sizeBytes = 0;
+        app.category = 0;
+        app.isModified = false;
+        apps.push_back(app);
+    }
+    closedir(dir);
 }
 
 bool AppEditor::backupDatabase() {
@@ -51,6 +84,7 @@ static bool loadAppsQuery(sqlite3* db, const char* query, std::vector<InstalledA
     if (sqlite3_prepare_v2(db, query, -1, &stmt, nullptr) != SQLITE_OK) return false;
 
     std::set<std::string> seen;
+    for (const auto& app : apps) seen.insert(app.titleId);
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         const char* id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
         if (!id || !*id || !seen.insert(id).second) continue;
@@ -74,37 +108,37 @@ static bool loadAppsQuery(sqlite3* db, const char* query, std::vector<InstalledA
 bool AppEditor::refreshInstalledApps() {
     apps.clear();
     sqlite3* db = nullptr;
-    if (sqlite3_open_v2(PATH_APP_DB, &db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
-        LOGE("Failed to open app.db");
-        if (db) sqlite3_close(db);
-        return false;
-    }
-
-    const char* queries[] = {
-        "SELECT titleId, titleName, uiCategory, lastPlayedTime FROM tbl_appinfo ORDER BY lastPlayedTime DESC;",
-        "SELECT titleId, titleName, uiCategory, 0 FROM tbl_appinfo ORDER BY titleName COLLATE NOCASE;",
-        "SELECT titleId, titleName, 0, 0 FROM appinfo ORDER BY titleName COLLATE NOCASE;"
-    };
-
-    bool loaded = false;
-    for (const char* query : queries) {
-        if (loadAppsQuery(db, query, apps)) {
-            loaded = true;
-            if (!apps.empty()) break;
+    bool loadedFromDb = false;
+    if (sqlite3_open_v2(PATH_APP_DB, &db, SQLITE_OPEN_READONLY, nullptr) == SQLITE_OK) {
+        const char* queries[] = {
+            "SELECT titleId, titleName, uiCategory, lastPlayedTime FROM tbl_appinfo ORDER BY lastPlayedTime DESC;",
+            "SELECT titleId, titleName, uiCategory, 0 FROM tbl_appinfo ORDER BY titleName COLLATE NOCASE;",
+            "SELECT titleId, titleName, 0, 0 FROM appinfo ORDER BY titleName COLLATE NOCASE;"
+        };
+        for (const char* query : queries) {
+            if (loadAppsQuery(db, query, apps)) {
+                loadedFromDb = true;
+                if (!apps.empty()) break;
+            }
         }
+        sqlite3_close(db);
+    } else {
+        LOGE("Could not open app.db; falling back to appmeta discovery");
+        if (db) sqlite3_close(db);
     }
 
-    if (!loaded) LOGE("Could not read installed applications from app.db: %s", sqlite3_errmsg(db));
-    sqlite3_close(db);
-    LOGI("Loaded %zu installed applications from app.db", apps.size());
-    return loaded;
+    if (apps.empty()) scanAppMetadata(apps);
+    std::sort(apps.begin(), apps.end(), [](const InstalledApp& a, const InstalledApp& b) {
+        return a.titleName < b.titleName;
+    });
+    LOGI("Loaded %zu installed applications (%s)", apps.size(), loadedFromDb ? "app.db" : "appmeta");
+    return !apps.empty();
 }
 
 bool AppEditor::updateAppTitle(const std::string& titleId, const std::string& newTitle) {
     if (newTitle.empty() || !backupDatabase()) return false;
     sqlite3* db = nullptr;
     if (sqlite3_open(PATH_APP_DB, &db) != SQLITE_OK) return false;
-
     sqlite3_stmt* stmt = nullptr;
     bool success = false;
     const char* query = "UPDATE tbl_appinfo SET titleName = ? WHERE titleId = ?;";
@@ -115,15 +149,8 @@ bool AppEditor::updateAppTitle(const std::string& titleId, const std::string& ne
         sqlite3_finalize(stmt);
     }
     sqlite3_close(db);
-
     if (success) {
-        for (auto& app : apps) {
-            if (app.titleId == titleId) {
-                app.titleName = newTitle;
-                app.isModified = true;
-                break;
-            }
-        }
+        for (auto& app : apps) if (app.titleId == titleId) { app.titleName = newTitle; app.isModified = true; break; }
     }
     return success;
 }
@@ -133,13 +160,7 @@ bool AppEditor::updateAppIcon(const std::string& titleId, const std::string& new
     mkdir(targetMetaDir.c_str(), 0777);
     std::string targetIcon = targetMetaDir + "/icon0.png";
     if (!copyFile(newIconPath, targetIcon)) return false;
-    for (auto& app : apps) {
-        if (app.titleId == titleId) {
-            app.iconPath = targetIcon;
-            app.isModified = true;
-            break;
-        }
-    }
+    for (auto& app : apps) if (app.titleId == titleId) { app.iconPath = targetIcon; app.isModified = true; break; }
     return true;
 }
 
@@ -163,9 +184,7 @@ bool AppEditor::moveAppPosition(int currentIndex, int targetIndex) {
 }
 
 bool AppEditor::sortAppsAlphabetical(bool ascending) {
-    std::sort(apps.begin(), apps.end(), [ascending](const InstalledApp& a, const InstalledApp& b) {
-        return ascending ? a.titleName < b.titleName : a.titleName > b.titleName;
-    });
+    std::sort(apps.begin(), apps.end(), [ascending](const InstalledApp& a, const InstalledApp& b) { return ascending ? a.titleName < b.titleName : a.titleName > b.titleName; });
     return true;
 }
 
@@ -183,13 +202,10 @@ bool AppEditor::applyXmbOrder() {
     if (apps.empty() || !backupDatabase()) return false;
     sqlite3* db = nullptr;
     if (sqlite3_open(PATH_APP_DB, &db) != SQLITE_OK) return false;
-
-    const uint64_t baseTime = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+    const uint64_t baseTime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     bool success = sqlite3_exec(db, "BEGIN TRANSACTION;", nullptr, nullptr, nullptr) == SQLITE_OK;
     sqlite3_stmt* stmt = nullptr;
-    const char* query = "UPDATE tbl_appinfo SET lastPlayedTime = ? WHERE titleId = ?;";
-    if (success && sqlite3_prepare_v2(db, query, -1, &stmt, nullptr) == SQLITE_OK) {
+    if (success && sqlite3_prepare_v2(db, "UPDATE tbl_appinfo SET lastPlayedTime = ? WHERE titleId = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
         for (size_t i = 0; i < apps.size(); ++i) {
             sqlite3_bind_int64(stmt, 1, static_cast<sqlite3_int64>(baseTime - i * 100));
             sqlite3_bind_text(stmt, 2, apps[i].titleId.c_str(), -1, SQLITE_TRANSIENT);
@@ -198,9 +214,7 @@ bool AppEditor::applyXmbOrder() {
             apps[i].lastPlayedTime = baseTime - i * 100;
         }
         sqlite3_finalize(stmt);
-    } else {
-        success = false;
-    }
+    } else success = false;
     sqlite3_exec(db, success ? "COMMIT;" : "ROLLBACK;", nullptr, nullptr, nullptr);
     sqlite3_close(db);
     return success;
