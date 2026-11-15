@@ -3,6 +3,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <set>
+#include <sys/statvfs.h>
+#include <cerrno>
 
 StorageCleaner::StorageCleaner() {}
 StorageCleaner::~StorageCleaner() {}
@@ -34,6 +36,15 @@ void StorageCleaner::scanDirectory(const std::string& dirPath, const std::string
 
 void StorageCleaner::scanStorage() {
     cleanableItems.clear();
+    systemTotalBytes = 0;
+    systemFreeBytes = 0;
+    struct statvfs filesystemInfo{};
+    if (statvfs("/", &filesystemInfo) == 0) {
+        systemTotalBytes = static_cast<uint64_t>(filesystemInfo.f_blocks) * filesystemInfo.f_frsize;
+        systemFreeBytes = static_cast<uint64_t>(filesystemInfo.f_bavail) * filesystemInfo.f_frsize;
+    } else {
+        LOGE("Could not read system filesystem capacity (errno=%d)", errno);
+    }
     const std::pair<const char*, const char*> roots[] = {
         {PATH_DATA_PKG, "Residual Package Cache"},
         {PATH_USER_DOWNLOAD, "Orphaned Download"},

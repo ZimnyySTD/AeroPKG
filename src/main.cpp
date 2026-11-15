@@ -81,15 +81,15 @@ int main(int argc, char* argv[]) {
     StorageCleaner cleaner;
     cleaner.scanStorage();
     WebServer webServer(&appEditor, &bgft, &avatar);
-    const bool webEnabled = false;
+    const bool webEnabled = webServer.start();
 
     ViewTab tab = TAB_HOME;
     int selected = 0;
     bool reorderMode = false;
     bool running = true;
     std::string status = appsLoaded
-        ? "Ready - " + std::to_string(appEditor.getInstalledApps().size()) + " app(s), " + std::to_string(bgft.getDiscoveredPkgs().size()) + " USB package(s), " + formatBytes(cleaner.getTotalReclaimableBytes()) + " cache"
-        : "No app database access - scanning app metadata";
+        ? "Ready - " + std::to_string(appEditor.getInstalledApps().size()) + " app(s), " + std::to_string(bgft.getDiscoveredPkgs().size()) + " package(s), " + formatBytes(cleaner.getSystemFreeBytes()) + " free"
+        : "No apps in app.db; scanning app metadata";
 
     while (running && !input.shouldQuit()) {
         input.update();
@@ -179,7 +179,7 @@ int main(int argc, char* argv[]) {
                 renderer.drawText(pkgs[i].fullPath + "   " + formatBytes(pkgs[i].sizeBytes), 82, y + 53, 17, Color::TextMuted());
                 y += 100;
             }
-            if (pkgs.empty()) renderer.drawText("No .pkg files found. Check that the USB is mounted and packages are within four folders.", 82, 250, 22, Color::TextMuted());
+            if (pkgs.empty()) renderer.drawText("No .pkg files found. Check /mnt/usb0, /mnt/usb1, /mnt/ext0, or /data/pkg.", 82, 250, 22, Color::TextMuted());
         } else if (tab == TAB_CATALOG) {
             renderer.drawText("FPKGi catalog", 48, 132, 30, Color::White());
             renderer.drawText(std::to_string(catalogItems.size()) + " real catalog entries   X queues the selected package", 48, 170, 18, Color::TextMuted());
@@ -191,7 +191,7 @@ int main(int argc, char* argv[]) {
                 renderer.drawText(catalogItems[i].titleId + "   " + catalogItems[i].region + "   " + catalogItems[i].type, 82, y + 51, 17, Color::TextMuted());
                 y += 100;
             }
-            if (catalogItems.empty()) renderer.drawText("No games.json found in /data/AeroPKG, /mnt/usb0, or /mnt/usb1.", 82, 250, 22, Color::TextMuted());
+            if (catalogItems.empty()) renderer.drawText("No games.json found in /data/AeroPKG, USB, extended storage, or /data/pkg.", 82, 250, 22, Color::TextMuted());
         } else if (tab == TAB_AVATAR) {
             renderer.drawText("Avatar suite", 48, 132, 30, Color::White());
             panel(renderer, 48, 210, 440, 520, Color::CardBg(), true);
@@ -203,9 +203,10 @@ int main(int argc, char* argv[]) {
         } else if (tab == TAB_CLEANER) {
             renderer.drawText("Storage cleaner", 48, 132, 30, Color::White());
             panel(renderer, 48, 210, 560, 230, Color::CardBg());
-            renderer.drawText(formatBytes(cleaner.getTotalReclaimableBytes()), 88, 260, 48, Color::Warning());
-            renderer.drawText("reclaimable storage", 90, 325, 22, Color::TextMuted());
-            renderer.drawText(std::to_string(cleaner.getItems().size()) + " files selected", 90, 365, 18, Color::TextMuted());
+            renderer.drawText(formatBytes(cleaner.getSystemFreeBytes()), 88, 260, 48, Color::AccentCyan());
+            renderer.drawText("free system storage", 90, 325, 22, Color::TextMuted());
+            renderer.drawText(formatBytes(cleaner.getSystemTotalBytes()) + " total", 90, 365, 18, Color::TextMuted());
+            renderer.drawText(formatBytes(cleaner.getTotalReclaimableBytes()) + " reclaimable cache", 90, 395, 18, Color::Warning());
             renderer.drawText("TRIANGLE scans package, download, GoldHEN and notification caches", 700, 270, 22, Color::White());
             renderer.drawText("SQUARE removes the selected residual files", 700, 315, 20, Color::TextMuted());
         }

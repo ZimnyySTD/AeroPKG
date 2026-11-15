@@ -30,7 +30,7 @@ static std::string lowerName(const std::string& value) {
 }
 
 static void scanUsbDirectory(const std::string& root, int depth, std::vector<DiscoveredPkg>& output, std::set<std::string>& seen) {
-    if (depth > 4) return;
+    if (depth > 8) return;
     DIR* dir = opendir(root.c_str());
     if (!dir) return;
     struct dirent* entry;
@@ -63,7 +63,7 @@ static void scanUsbDirectory(const std::string& root, int depth, std::vector<Dis
 void BgftService::scanUsbPackages() {
     discoveredPkgs.clear();
     std::set<std::string> seen;
-    const char* roots[] = {PATH_USB0, PATH_USB1, "/mnt/ext0", "/mnt/usb0/PKG", "/mnt/usb1/PKG"};
+    const char* roots[] = {PATH_USB0, PATH_USB1, PATH_EXT0, PATH_DATA_PKG};
     for (const char* root : roots) scanUsbDirectory(root, 0, discoveredPkgs, seen);
     std::sort(discoveredPkgs.begin(), discoveredPkgs.end(), [](const DiscoveredPkg& a, const DiscoveredPkg& b) { return a.filename < b.filename; });
     LOGI("USB package scan found %zu package(s)", discoveredPkgs.size());
@@ -91,8 +91,17 @@ bool BgftService::enqueueAllDiscovered() {
 }
 
 bool BgftService::sendBgftInstall(const std::string& pkgPathOrUrl) {
+    if (!pkgPathOrUrl.empty() && pkgPathOrUrl[0] == '/') {
+        std::string cmd = "curl --fail --silent --show-error --max-time 30 "
+                          "--form 'pkg=@" + pkgPathOrUrl + "' "
+                          "http://127.0.0.1:12800/api/install";
+        return system(cmd.c_str()) == 0;
+    }
     std::string payload = "{\"type\":\"direct\",\"packages\":[\"" + pkgPathOrUrl + "\"]}";
-    std::string cmd = "curl -s -X POST http://127.0.0.1:12800/api/install -d '" + payload + "'";
+    std::string cmd = "curl --fail --silent --show-error --max-time 30 "
+                      "-H 'Content-Type: application/json' "
+                      "-X POST http://127.0.0.1:12800/api/install "
+                      "-d '" + payload + "'";
     return system(cmd.c_str()) == 0;
 }
 

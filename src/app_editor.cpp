@@ -11,6 +11,7 @@
 #include <set>
 #include <cerrno>
 #include <cstring>
+#include <cctype>
 
 AppEditor::AppEditor() {}
 AppEditor::~AppEditor() {}
@@ -26,6 +27,21 @@ static bool copyFile(const std::string& src, const std::string& dst) {
 
 static std::string metaDir(const std::string& titleId) {
     return std::string(PATH_USER_APPMETA) + "/" + titleId;
+}
+
+static std::string findSfoPath(const std::string& titleId) {
+    const std::string roots[] = {
+        std::string(PATH_USER_APPMETA) + "/" + titleId + "/param.sfo",
+        std::string(PATH_SYSTEM_APPMETA) + "/" + titleId + "/param.sfo",
+        std::string(PATH_MMS_APPMETA) + "/" + titleId + "/param.sfo",
+        std::string(PATH_DATA_APPMETA) + "/" + titleId + "/param.sfo",
+        std::string(PATH_USER_APP) + "/" + titleId + "/sce_sys/param.sfo"
+    };
+    for (const auto& path : roots) {
+        struct stat st{};
+        if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) return path;
+    }
+    return "";
 }
 
 static std::string metaIconPath(const std::string& titleId) {
@@ -189,13 +205,14 @@ static bool loadAppsQuery(sqlite3* db, const char* query, std::vector<InstalledA
         const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         InstalledApp app;
         app.titleId = id;
-        app.titleName = (name && *name) ? name : readSfoField(metaDir(app.titleId) + "/param.sfo", "TITLE");
+        const std::string sfoPath = findSfoPath(app.titleId);
+        app.titleName = (name && *name) ? name : readSfoField(sfoPath, "TITLE");
         if (app.titleName.empty()) app.titleName = app.titleId;
-        app.version = readSfoField(metaDir(app.titleId) + "/param.sfo", "VERSION");
+        app.version = readSfoField(sfoPath, "VERSION");
         app.category = sqlite3_column_int(stmt, 2);
         app.lastPlayedTime = static_cast<uint64_t>(sqlite3_column_int64(stmt, 3));
         app.iconPath = metaIconPath(app.titleId);
-        app.sizeBytes = 0;
+        app.sizeBytes = directorySize(std::string(PATH_USER_APP) + "/" + app.titleId);
         app.isModified = false;
         apps.push_back(app);
     }
@@ -203,21 +220,64 @@ static bool loadAppsQuery(sqlite3* db, const char* query, std::vector<InstalledA
     return true;
 }
 
+static std::string quoteSqlIdentifier(const std::string& identifier) {
+    std::string quoted = "\"";
+    for (char c : identifier) {
+        if (c == '"') quoted += '"';
+        quoted += c;
+    }
+    quoted += '"';
+    return quoted;
+}
+
+static bool findAppTable(sqlite3* db, std::string& table, std::string& idColumn,
+                         std::string& nameColumn, std::string& categoryColumn,
+                         std::string& timeColumn) {
+    sqlite3_stmt* tables = nullptr;
+    if (sqlite3_prepare_v2(db,
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name IN ('tbl_appinfo', 'appinfo') ORDER BY name = 'tbl_appinfo' DESC;",
+            -1, &tables, nullptr) != SQLITE_OK) return false;
+
+    while (sqlite3_step(tables) == SQLITE_ROW && table.empty()) {
+        const char* tableName = reinterpret_cast<const char*>(sqlite3_column_text(tables, 0));
+        if (!tableName) continue;
+        sqlite3_stmt* columns = nullptr;
+        std::string pragma = "PRAGMA table_info(" + quoteSqlIdentifier(tableName) + ");";
+        if (sqlite3_prepare_v2(db, pragma.c_str(), -1, &columns, nullptr) != SQLITE_OK) continue;
+        while (sqlite3_step(columns) == SQLITE_ROW) {
+            const char* columnName = reinterpret_cast<const char*>(sqlite3_column_text(columns, 1));
+            if (!columnName) continue;
+            std::string lower(columnName);
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (idColumn.empty() && (lower == "titleid" || lower == "title_id" || lower == "titleid_")) idColumn = columnName;
+            if (nameColumn.empty() && (lower == "titlename" || lower == "title_name" || lower == "name")) nameColumn = columnName;
+            if (categoryColumn.empty() && (lower == "uicategory" || lower == "category" || lower == "apptype")) categoryColumn = columnName;
+            if (timeColumn.empty() && (lower == "lastplayedtime" || lower == "last_played_time" || lower == "lastplayed")) timeColumn = columnName;
+        }
+        sqlite3_finalize(columns);
+        if (!idColumn.empty()) table = tableName;
+    }
+    sqlite3_finalize(tables);
+    return !table.empty();
+}
+
 bool AppEditor::refreshInstalledApps() {
     apps.clear();
     sqlite3* db = nullptr;
     bool loadedFromDb = false;
     if (sqlite3_open_v2(PATH_APP_DB, &db, SQLITE_OPEN_READONLY, nullptr) == SQLITE_OK) {
-        const char* queries[] = {
-            "SELECT titleId, titleName, uiCategory, lastPlayedTime FROM tbl_appinfo ORDER BY lastPlayedTime DESC;",
-            "SELECT titleId, titleName, uiCategory, 0 FROM tbl_appinfo ORDER BY titleName COLLATE NOCASE;",
-            "SELECT titleId, titleName, 0, 0 FROM appinfo ORDER BY titleName COLLATE NOCASE;"
-        };
-        for (const char* query : queries) {
-            if (loadAppsQuery(db, query, apps)) {
-                loadedFromDb = true;
-                if (!apps.empty()) break;
-            }
+        std::string table, idColumn, nameColumn, categoryColumn, timeColumn;
+        if (findAppTable(db, table, idColumn, nameColumn, categoryColumn, timeColumn)) {
+            const std::string query =
+                "SELECT " + quoteSqlIdentifier(idColumn) + ", " +
+                (nameColumn.empty() ? "''" : quoteSqlIdentifier(nameColumn)) + ", " +
+                (categoryColumn.empty() ? "0" : quoteSqlIdentifier(categoryColumn)) + ", " +
+                (timeColumn.empty() ? "0" : quoteSqlIdentifier(timeColumn)) +
+                " FROM " + quoteSqlIdentifier(table) +
+                (timeColumn.empty() ? ";" : " ORDER BY " + quoteSqlIdentifier(timeColumn) + " DESC;");
+            loadedFromDb = loadAppsQuery(db, query.c_str(), apps);
         }
         sqlite3_close(db);
     } else {

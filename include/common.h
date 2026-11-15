@@ -27,6 +27,7 @@
 #define PATH_AEROPKG_DATA   "/data/AeroPKG"
 #define PATH_USB0           "/mnt/usb0"
 #define PATH_USB1           "/mnt/usb1"
+#define PATH_EXT0           "/mnt/ext0"
 
 // Logging macro
 #define LOG_TAG "[AeroPKG] "

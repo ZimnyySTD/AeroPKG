@@ -48,16 +48,19 @@ bool CatalogEngine::parseJsonString(const std::string& jsonStr) {
         CatalogItem item;
         item.titleId = extractJsonField(objStr, "title_id");
         if (item.titleId.empty()) item.titleId = extractJsonField(objStr, "id");
+        if (item.titleId.empty()) item.titleId = extractJsonField(objStr, "titleId");
         item.name = extractJsonField(objStr, "name");
         if (item.name.empty()) item.name = extractJsonField(objStr, "title");
         item.region = extractJsonField(objStr, "region");
         item.version = extractJsonField(objStr, "version");
         item.pkgUrl = extractJsonField(objStr, "url");
         if (item.pkgUrl.empty()) item.pkgUrl = extractJsonField(objStr, "pkg");
+        if (item.pkgUrl.empty()) item.pkgUrl = extractJsonField(objStr, "download");
         item.iconUrl = extractJsonField(objStr, "icon");
         item.type = extractJsonField(objStr, "type");
         if (item.type.empty()) item.type = "Game";
         item.sizeBytes = parseSize(extractJsonField(objStr, "size"));
+        if (item.sizeBytes == 0) item.sizeBytes = parseSize(extractJsonField(objStr, "fileSize"));
 
         if (!item.name.empty() && !item.pkgUrl.empty()) {
             items.push_back(item);
@@ -88,9 +91,19 @@ bool CatalogEngine::loadFromUrl(const std::string& repoUrl) {
 
 bool CatalogEngine::loadCatalog() {
     items.clear();
-    if (loadFromFile(std::string(PATH_AEROPKG_DATA) + "/games.json")) return true;
-    if (loadFromFile(std::string(PATH_USB0) + "/games.json")) return true;
-    if (loadFromFile(std::string(PATH_USB1) + "/games.json")) return true;
+    const std::string paths[] = {
+        std::string(PATH_AEROPKG_DATA) + "/games.json",
+        std::string(PATH_USB0) + "/games.json",
+        std::string(PATH_USB1) + "/games.json",
+        std::string(PATH_EXT0) + "/games.json",
+        std::string(PATH_DATA_PKG) + "/games.json"
+    };
+    for (const auto& path : paths) {
+        if (loadFromFile(path)) return true;
+    }
+    for (const auto& repository : repositoryUrls) {
+        if (loadFromUrl(repository)) return true;
+    }
     LOGI("No catalog file found; catalog is empty");
     return false;
 }

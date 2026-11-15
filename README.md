@@ -18,7 +18,7 @@ A clean, fast, hardware-accelerated PlayStation 4 homebrew package manager, dash
    - **Soft ShellCore Reload**: Instantly refreshes the PS4 XMB home screen without a full console reboot.
 
 3. **PKG Installation Engine**:
-   - **USB Batch Installer**: Scan `/mnt/usb0` or `/mnt/usb1` for `.pkg` files and install them individually or via **"Install All"** with an asynchronous queue tracker.
+   - **USB Batch Installer**: Scan `/mnt/usb0`, `/mnt/usb1`, `/mnt/ext0`, and `/data/pkg` recursively for `.pkg` files and install them individually or via **"Install All"** with an asynchronous queue tracker.
    - **Official BGFT Integration**: Installs queue directly in the official PS4 Notifications and Download Manager, enabling background downloads and pause/resume.
 
 4. **Embedded Web UI & Remote Package Sender**:
@@ -35,7 +35,7 @@ A clean, fast, hardware-accelerated PlayStation 4 homebrew package manager, dash
    - Includes offline presets and automatic scaling to 440x440.
 
 7. **Storage & Download Cleaner**:
-   - Scans `/data/pkg/`, `/user/download/`, and orphaned cache chunks to safely reclaim gigabytes of storage with one click.
+   - Reports actual filesystem capacity/free space and scans `/data/pkg/`, `/user/download/`, and orphaned cache chunks to safely reclaim gigabytes of storage with one click.
 
 ---
 
