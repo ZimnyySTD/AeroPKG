@@ -25,5 +25,5 @@ public:
 
 private:
     std::vector<CleanableItem> cleanableItems;
-    void scanDirectory(const std::string& dirPath, const std::string& desc);
+    void scanDirectory(const std::string& dirPath, const std::string& desc, int depth = 0);
 };
